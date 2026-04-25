@@ -11,7 +11,7 @@ on:
 env:
   NDK_VERSION: "r27"
   FLUTTER_VERSION: "3.24.5"
-  RUST_VERSION: "1.75"
+  RUST_VERSION: "1.85"
 
 jobs:
   # ---------- Android ----------
@@ -97,55 +97,13 @@ jobs:
           name: cuberemote-${{ matrix.flavor }}-android
           path: release/*.apk
 
-  # ---------- Windows ----------
-  build-windows:
-    name: Windows ${{ matrix.flavor }}
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        flavor: [agent, viewer]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-
-      - name: Install vcpkg deps
-        run: |
-          vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
-
-      - name: Rebrand
-        shell: bash
-        run: bash rebrand.sh ${{ matrix.flavor }}
-
-      - name: Build Windows
-        shell: bash
-        run: cargo build --release
-
-      - name: Rename EXE
-        shell: bash
-        run: |
-          mkdir -p release
-          cp target/release/rustdesk.exe \
-             release/CubeRemote-${{ matrix.flavor }}-${GITHUB_REF_NAME}.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cuberemote-${{ matrix.flavor }}-windows
-          path: release/*.exe
+  # ---------- Windows (보류 - vcpkg 셋업 필요) ----------
+  # RustDesk Windows 빌드는 vcpkg 의존성 + Sciter/Flutter 분기 등 복잡한 설정 필요
+  # Android 빌드 안정화 후 별도 워크플로 작성 예정
 
   # ---------- Release ----------
   release:
-    needs: [build-android, build-windows]
+    needs: [build-android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
