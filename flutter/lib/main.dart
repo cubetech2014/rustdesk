@@ -24,6 +24,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'common.dart';
+import 'cuberemote/main_hook.dart';
 import 'consts.dart';
 import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
@@ -145,7 +146,7 @@ void runMainApp(bool startService) async {
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
-  runApp(App());
+  runApp(CubeRemoteMainHook.wrapApp(App()));
 
   bool? alwaysOnTop;
   if (isDesktop) {
@@ -178,6 +179,7 @@ void runMainApp(bool startService) async {
 }
 
 void runMobileApp() async {
+  await CubeRemoteMainHook.onAppStart();
   await initEnv(kAppTypeMain);
   checkUpdate();
   if (isAndroid) androidChannelInit();
@@ -185,7 +187,7 @@ void runMobileApp() async {
   draggablePositions.load();
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
-  runApp(App());
+  runApp(CubeRemoteMainHook.wrapApp(App()));
   await initUniLinks();
 }
 
