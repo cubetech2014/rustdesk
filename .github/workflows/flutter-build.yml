@@ -92,6 +92,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
       - name: Restore bridge files
         uses: actions/download-artifact@master
         with:
@@ -313,6 +316,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
       - name: Install LLVM and Clang
         uses: rustdesk-org/install-llvm-action-32bit@master
         with:
@@ -462,6 +468,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Install flutter
 #         uses: subosito/flutter-action@v2
@@ -587,6 +596,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Import the codesign cert
 #         if: env.MACOS_P12_BASE64 != null
@@ -887,6 +899,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
       - name: Install flutter
         uses: subosito/flutter-action@v2
         with:
@@ -1158,6 +1173,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Install flutter
 #         uses: subosito/flutter-action@v2
@@ -1324,6 +1342,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
       - name: Set Swap Space
         if: ${{ matrix.job.arch == 'x86_64' }}
         uses: pierotofy/set-swap-space@master
@@ -1653,6 +1674,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Modify vcpkg.json for armv7
 #         if: matrix.job.vcpkg-triplet == 'arm-linux'
@@ -1855,6 +1879,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Download Binary
 #         uses: actions/download-artifact@master
@@ -1928,6 +1955,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Download Binary
 #         uses: actions/download-artifact@master
@@ -1989,6 +2019,9 @@ jobs:
 #         uses: actions/checkout@v4
 #         with:
 #           submodules: recursive
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        run: bash patches/apply.sh
 # 
 #       - name: Prepare env
 #         run: |
