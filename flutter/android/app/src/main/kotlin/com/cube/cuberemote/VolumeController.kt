@@ -1,4 +1,4 @@
-﻿package com.cube.cuberemote
+package com.cube.cuberemote
 
 // Inspired by https://github.com/yosemiteyss/flutter_volume_controller/blob/main/android/src/main/kotlin/com/yosemiteyss/flutter_volume_controller/VolumeController.kt
 

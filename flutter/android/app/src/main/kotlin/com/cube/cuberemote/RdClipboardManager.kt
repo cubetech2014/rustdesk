@@ -1,4 +1,4 @@
-﻿package com.cube.cuberemote
+package com.cube.cuberemote
 
 import java.nio.ByteBuffer
 import java.util.Timer

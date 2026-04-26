@@ -1,4 +1,4 @@
-﻿package com.cube.cuberemote
+package com.cube.cuberemote
 
 /**
  * Handle remote input and dispatch android gesture

@@ -1,4 +1,4 @@
-﻿package com.cube.cuberemote
+package com.cube.cuberemote
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent

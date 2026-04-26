@@ -1,4 +1,4 @@
-﻿// CubeRemote 서버 설정 (rebrand.sh가 API_BASE / FLAVOR를 주입)
+// CubeRemote 서버 설정 (rebrand.sh가 API_BASE / FLAVOR를 주입)
 library cuberemote_config;
 
 const API_BASE = "https://remote.cube-tech.co.kr/api/cuberemote";

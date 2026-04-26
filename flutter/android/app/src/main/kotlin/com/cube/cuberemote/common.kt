@@ -1,4 +1,4 @@
-﻿package com.cube.cuberemote
+package com.cube.cuberemote
 
 import android.Manifest.permission.*
 import android.annotation.SuppressLint

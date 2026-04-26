@@ -1,4 +1,4 @@
-﻿// ffi.kt
+// ffi.kt
 
 package ffi
 
