@@ -24,6 +24,8 @@ $disable_jobs = @(
     'build-appimage:'
     'build-rustdesk-web:'
     'build-rustdesk-ios:'
+    'publish_unsigned:'             # 비활성화된 잡들에 의존하므로 같이 제거
+    'publish:'                      # signed 합본 publish (있는 경우)
 )
 
 $content = Get-Content -Raw -Encoding UTF8 $file
