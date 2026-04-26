@@ -1,11 +1,11 @@
-// ffi.kt
+﻿// ffi.kt
 
 package ffi
 
 import android.content.Context
 import java.nio.ByteBuffer
 
-import com.carriez.flutter_hbb.RdClipboardManager
+import com.cube.cuberemote.RdClipboardManager
 
 object FFI {
     init {

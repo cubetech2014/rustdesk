@@ -1,4 +1,4 @@
-import com.google.protobuf.gradle.*
+﻿import com.google.protobuf.gradle.*
 import groovy.json.JsonSlurper
 
 plugins {
@@ -97,7 +97,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.carriez.flutter_hbb"
+        applicationId "com.cube.cuberemote"
         minSdkVersion 22
         targetSdkVersion 33
         versionCode flutterVersionCode.toInteger()
