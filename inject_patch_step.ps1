@@ -26,7 +26,7 @@ $injectStep = @"
 # 패턴: "submodules: recursive" 다음 줄 → 이미 우리가 추가한 곳 찾기
 # 안전하게: "submodules: recursive" 가 나오는 모든 위치 다음에 패치 step 삽입
 
-$pattern = '(?m)(submodules:\s*recursive\s*$)'
+$pattern = '(?m)^(\s+submodules:\s*recursive\s*$)'
 
 # 이미 패치 step이 들어가 있으면 중복 방지
 if ($content -match 'Apply CubeRemote branding patches') {
