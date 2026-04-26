@@ -105,11 +105,8 @@ dependencies:
   pull_down_button: ^0.9.3
   device_info_plus: ^9.1.0
   qr_flutter: ^4.1.0
-  # CubeRemote runtime deps
+  # CubeRemote runtime deps (minimal — battery/connectivity/network 제거, dart:io NetworkInterface 사용)
   shared_preferences: ^2.2.0
-  battery_plus: ^5.0.2
-  connectivity_plus: ^5.0.2
-  network_info_plus: ^4.1.0
   extended_text: 14.0.0
   xterm: 4.0.0
   sqflite: 2.2.0
