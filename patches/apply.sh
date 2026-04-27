@@ -261,6 +261,31 @@ if [ -f "$SETTINGS_DART" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [12] settings_page.dart — 운영 무관 RustDesk 항목 hide
+#   - Account 섹션 (RustDesk 클라우드 로그인)
+#   - About 섹션 (Version+rustdesk.com, Privacy Statement, Build Date, Fingerprint)
+#   - Directory (비디오 저장 경로)
+#   - ID/Relay Server (brand 빌드 자동 설정 — 사용자 변경 차단)
+# ────────────────────────────────────────────────────────────
+if [ -f "$SETTINGS_DART" ]; then
+    if grep -q "// CubeRemote: hidden RustDesk sections" "$SETTINGS_DART"; then
+        echo "[12] $SETTINGS_DART  (skip — 항목 hide 이미 적용)"
+    else
+        echo "[12] $SETTINGS_DART  운영 무관 항목 hide"
+        # marker 추가 (idempotent)
+        sed -i "1i // CubeRemote: hidden RustDesk sections" "$SETTINGS_DART"
+        # Account 섹션: bind.isDisableAccount() 호출을 강제 true (조건 false → 섹션 dead)
+        sed -i 's|if (!bind.isDisableAccount())|if (false)|g' "$SETTINGS_DART"
+        # About 섹션: privacy_tip marker 까지 통째로 dead
+        perl -i -0pe 's|(\s+)SettingsSection\(\s*title: Text\(translate\("About"\)\),[\s\S]*?Icons\.privacy_tip\),\s*\)\s*\],\s*\),|$1// CubeRemote: About hidden|s' "$SETTINGS_DART"
+        # Directory tile (비디오 저장 경로)
+        perl -i -0pe 's|\s+SettingsTile\(\s*title: Text\(translate\("Directory"\)\),\s*description: Text\(bind\.mainVideoSaveDirectory[^)]*\)\),\s*\),||s' "$SETTINGS_DART"
+        # ID/Relay Server tile
+        perl -i -0pe 's|\s+if \(!disabledSettings && !_hideNetwork && !_hideServer\)\s+SettingsTile\([\s\S]*?showServerSettings[\s\S]*?setState\(callback\);\s*\}\);\s*\}\),||s' "$SETTINGS_DART"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # 검증
 # ────────────────────────────────────────────────────────────
 echo ""
@@ -288,6 +313,7 @@ check "Cargo winres"   "$CARGO"       "ProductName = \"$APP_NAME_NEW\""
 check "conn-type=$HARD_CONN_TYPE" "$FFI_RS" "force conn-type=$HARD_CONN_TYPE"
 check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
+check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 
 if [ "$FAIL" = "1" ]; then
     echo ""
