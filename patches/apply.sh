@@ -10,7 +10,22 @@ echo "=== CubeRemote 통합 빌드 패치 시작 ==="
 # === 설정 ===
 RDV_SERVER="203.245.29.78"
 PUB_KEY="i3sWZx4sShCLVGZ3mPoZVbzeYfc7VK1pOy2XdrRhkt0="
-APP_NAME_NEW="CubeRemote"
+
+# === Flavor 분기 (CUBE_FLAVOR=agent|viewer, default agent) ===
+FLAVOR="${CUBE_FLAVOR:-agent}"
+case "$FLAVOR" in
+    viewer)
+        APP_NAME_NEW="CubeRemote Viewer"
+        ANDROID_LABEL="CubeRemote 관리자"
+        HARD_CONN_TYPE="outgoing"
+        ;;
+    *)
+        APP_NAME_NEW="CubeRemote"
+        ANDROID_LABEL="CubeRemote"
+        HARD_CONN_TYPE="incoming"
+        ;;
+esac
+echo "FLAVOR=$FLAVOR  APP_NAME=$APP_NAME_NEW  conn-type=$HARD_CONN_TYPE"
 
 # === 권한 강제 (submodule 권한 이슈 우회) ===
 chmod -R u+w libs flutter src res Cargo.toml 2>/dev/null || true
@@ -34,7 +49,8 @@ if [ -f "$CONFIG_RS" ]; then
     else
         echo "[1/9] $CONFIG_RS  패치"
         TMP=$(mktemp)
-        sed -e "s|RwLock::new(\"RustDesk\".to_owned())|RwLock::new(\"$APP_NAME_NEW\".to_owned())|" \
+        # APP_NAME 라인 한정 — 어떤 값이든 새 flavor 값으로 교체
+        sed -e "/pub static ref APP_NAME/ s|RwLock::new(\"[^\"]*\".to_owned())|RwLock::new(\"$APP_NAME_NEW\".to_owned())|" \
             -e "s|^pub const RENDEZVOUS_SERVERS:.*|pub const RENDEZVOUS_SERVERS: \\&[\\&str] = \\&[\"$RDV_SERVER\"];|" \
             -e "s|^pub const RS_PUB_KEY:.*|pub const RS_PUB_KEY: \\&str = \"$PUB_KEY\";|" \
             "$CONFIG_RS" > "$TMP"
@@ -52,12 +68,13 @@ fi
 # ────────────────────────────────────────────────────────────
 STRINGS_XML="flutter/android/app/src/main/res/values/strings.xml"
 if [ -f "$STRINGS_XML" ]; then
-    if grep -q "name=\"app_name\">$APP_NAME_NEW<" "$STRINGS_XML"; then
+    if grep -q "name=\"app_name\">$ANDROID_LABEL<" "$STRINGS_XML"; then
         echo "[2/9] $STRINGS_XML  (skip)"
         SKIPPED=$((SKIPPED+1))
     else
-        echo "[2/9] $STRINGS_XML  패치"
-        sed -i "s|<string name=\"app_name\">RustDesk</string>|<string name=\"app_name\">$APP_NAME_NEW</string>|" "$STRINGS_XML"
+        echo "[2/9] $STRINGS_XML  패치 (label=$ANDROID_LABEL)"
+        # 기존 어떤 값이든 새 라벨로 교체
+        sed -i "s|<string name=\"app_name\">[^<]*</string>|<string name=\"app_name\">$ANDROID_LABEL</string>|" "$STRINGS_XML"
         sed -i "s|RustDesk screen sharing|$APP_NAME_NEW screen sharing|" "$STRINGS_XML"
         PATCHED=$((PATCHED+1))
     fi
@@ -100,12 +117,12 @@ if [ -f "$CARGO" ]; then
     else
         echo "[4/9] $CARGO  패치"
         sed -i \
-            -e "s|^ProductName = \"RustDesk\"|ProductName = \"$APP_NAME_NEW\"|" \
-            -e "s|^FileDescription = \"RustDesk Remote Desktop\"|FileDescription = \"$APP_NAME_NEW Remote Desktop\"|" \
-            -e "s|^OriginalFilename = \"rustdesk.exe\"|OriginalFilename = \"cuberemote.exe\"|" \
+            -e "s|^ProductName = \"[^\"]*\"|ProductName = \"$APP_NAME_NEW\"|" \
+            -e "s|^FileDescription = \"[^\"]*\"|FileDescription = \"$APP_NAME_NEW Remote Desktop\"|" \
+            -e "s|^OriginalFilename = \"[^\"]*\"|OriginalFilename = \"cuberemote-${FLAVOR}.exe\"|" \
             "$CARGO"
         # [package.metadata.bundle] 섹션의 name 만 (다른 name은 건드리지 않음)
-        sed -i "/\[package.metadata.bundle\]/,/^\[/ { s|^name = \"RustDesk\"|name = \"$APP_NAME_NEW\"|; }" "$CARGO"
+        sed -i "/\[package.metadata.bundle\]/,/^\[/ { s|^name = \"[^\"]*\"|name = \"$APP_NAME_NEW\"|; }" "$CARGO"
         PATCHED=$((PATCHED+1))
     fi
 fi
@@ -203,12 +220,14 @@ fi
 # ────────────────────────────────────────────────────────────
 FFI_RS="src/flutter_ffi.rs"
 if [ -f "$FFI_RS" ]; then
-    if grep -q 'CubeRemote: force incoming-only' "$FFI_RS"; then
-        echo "[10/11] $FFI_RS  (skip — 이미 주입됨)"
+    if grep -q "CubeRemote: force conn-type=$HARD_CONN_TYPE" "$FFI_RS"; then
+        echo "[10/11] $FFI_RS  (skip — flavor=$FLAVOR conn-type=$HARD_CONN_TYPE 이미 주입)"
     else
-        echo "[10/11] $FFI_RS  incoming-only 강제 주입"
-        # initialize() 함수 시작 직후에 한 줄 추가
-        sed -i '/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\    // CubeRemote: force incoming-only (POS agent — peer-controlled)\n    config::HARD_SETTINGS.write().unwrap().insert("conn-type".to_string(), "incoming".to_string());' "$FFI_RS"
+        echo "[10/11] $FFI_RS  conn-type=$HARD_CONN_TYPE 강제 주입"
+        # 기존 CubeRemote 주입 라인이 있으면 먼저 제거 (다른 flavor 일 수 있음)
+        sed -i '/CubeRemote: force conn-type/d' "$FFI_RS"
+        sed -i '/HARD_SETTINGS.write().unwrap().insert("conn-type"/d' "$FFI_RS"
+        sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force conn-type=$HARD_CONN_TYPE\\n    config::HARD_SETTINGS.write().unwrap().insert(\"conn-type\".to_string(), \"$HARD_CONN_TYPE\".to_string());" "$FFI_RS"
     fi
 fi
 
@@ -263,10 +282,10 @@ FAIL=0
 check "서버 주소"     "$CONFIG_RS"   "\"$RDV_SERVER\""
 check "공개키"         "$CONFIG_RS"   "\"$PUB_KEY\""
 check "APP_NAME"       "$CONFIG_RS"   "RwLock::new(\"$APP_NAME_NEW\""
-check "Android app_name" "$STRINGS_XML" ">$APP_NAME_NEW<"
+check "Android app_name" "$STRINGS_XML" ">$ANDROID_LABEL<"
 check "main.dart 훅"   "$MAIN_DART"   "cuberemote/main_hook"
 check "Cargo winres"   "$CARGO"       "ProductName = \"$APP_NAME_NEW\""
-check "incoming-only"  "$FFI_RS"      "CubeRemote: force incoming-only"
+check "conn-type=$HARD_CONN_TYPE" "$FFI_RS" "force conn-type=$HARD_CONN_TYPE"
 check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 
