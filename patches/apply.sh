@@ -27,12 +27,14 @@ case "$FLAVOR" in
 esac
 echo "FLAVOR=$FLAVOR  APP_NAME=$APP_NAME_NEW  conn-type=$HARD_CONN_TYPE"
 
-# === AGENT_VERSION = 빌드 tag (heartbeat에 정확한 버전 박기) ===
+# === config.dart FLAVOR + AGENT_VERSION 빌드 시점 hardcode ===
+# (dart-define 대신 직접 sed — Windows build.py 가 인자 통과 안 시켜서 일관성 위해)
 CUBE_TAG_VAL="${CUBE_TAG:-dev}"
 CONFIG_DART="flutter/lib/cuberemote/config.dart"
 if [ -f "$CONFIG_DART" ]; then
     sed -i "s|^const AGENT_VERSION = .*|const AGENT_VERSION = \"$CUBE_TAG_VAL\";|" "$CONFIG_DART"
-    echo "AGENT_VERSION=$CUBE_TAG_VAL"
+    sed -i "s|^const FLAVOR = .*|const FLAVOR = \"$FLAVOR\";|" "$CONFIG_DART"
+    echo "AGENT_VERSION=$CUBE_TAG_VAL  FLAVOR=$FLAVOR (hardcoded into config.dart)"
 fi
 
 # === 권한 강제 (submodule 권한 이슈 우회) ===
@@ -349,6 +351,7 @@ check "conn-type=$HARD_CONN_TYPE" "$FFI_RS" "force conn-type=$HARD_CONN_TYPE"
 check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
+check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
 
 if [ "$FAIL" = "1" ]; then
     echo ""
