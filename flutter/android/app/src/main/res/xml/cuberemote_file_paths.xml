@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- CubeRemote 자동 업데이트 APK 다운로드 위치 -->
+    <external-files-path name="ext-files"  path="."/>
+    <files-path         name="int-files"   path="."/>
+    <cache-path         name="int-cache"   path="."/>
+    <external-cache-path name="ext-cache"  path="."/>
+</paths>

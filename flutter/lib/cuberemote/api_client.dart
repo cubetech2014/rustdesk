@@ -39,10 +39,15 @@ class ApiClient {
     }
   }
 
-  static Future<Map<String, dynamic>?> checkUpdate(String platform, String currentVersion) async {
+  static Future<Map<String, dynamic>?> checkUpdate(
+      String platform, String currentVersion, String flavor) async {
     try {
       final uri = Uri.parse('$API_BASE/check_update.php').replace(
-        queryParameters: {'platform': platform, 'version': currentVersion},
+        queryParameters: {
+          'platform': platform,
+          'version': currentVersion,
+          'flavor': flavor,
+        },
       );
       final resp = await _client.get(uri).timeout(_timeout);
       if (resp.statusCode >= 200 && resp.statusCode < 300) {

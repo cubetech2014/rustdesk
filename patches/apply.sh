@@ -27,6 +27,14 @@ case "$FLAVOR" in
 esac
 echo "FLAVOR=$FLAVOR  APP_NAME=$APP_NAME_NEW  conn-type=$HARD_CONN_TYPE"
 
+# === AGENT_VERSION = 빌드 tag (heartbeat에 정확한 버전 박기) ===
+CUBE_TAG_VAL="${CUBE_TAG:-dev}"
+CONFIG_DART="flutter/lib/cuberemote/config.dart"
+if [ -f "$CONFIG_DART" ]; then
+    sed -i "s|^const AGENT_VERSION = .*|const AGENT_VERSION = \"$CUBE_TAG_VAL\";|" "$CONFIG_DART"
+    echo "AGENT_VERSION=$CUBE_TAG_VAL"
+fi
+
 # === 권한 강제 (submodule 권한 이슈 우회) ===
 chmod -R u+w libs flutter src res Cargo.toml 2>/dev/null || true
 
@@ -257,6 +265,33 @@ if [ -f "$SETTINGS_DART" ]; then
         sed -i "/^import 'package:settings_ui\/settings_ui.dart';/a import '../../cuberemote/settings_tile.dart';" "$SETTINGS_DART"
         # customClientSection 다음에 우리 섹션 한 줄 삽입
         sed -i 's|^        customClientSection,$|        customClientSection,\n        CubeRemoteSettingsSection.build(context),|' "$SETTINGS_DART"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# [11b] MainActivity.kt — CubeRemoteInstaller (자동 업데이트 PackageInstaller) 등록
+# ────────────────────────────────────────────────────────────
+MAIN_ACTIVITY="flutter/android/app/src/main/kotlin/com/cube/cuberemote/MainActivity.kt"
+if [ -f "$MAIN_ACTIVITY" ]; then
+    if grep -q "CubeRemoteInstaller.register" "$MAIN_ACTIVITY"; then
+        echo "[11b] $MAIN_ACTIVITY  (skip — installer 등록 이미)"
+    else
+        echo "[11b] $MAIN_ACTIVITY  installer 등록 주입"
+        # initFlutterChannel 호출 다음 줄에 register 호출 추가
+        sed -i '/initFlutterChannel(flutterMethodChannel!!)/a\        CubeRemoteInstaller.register(flutterEngine, this)' "$MAIN_ACTIVITY"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# [11c] AndroidManifest.xml — FileProvider 추가 (자동 업데이트 APK 공유용)
+# ────────────────────────────────────────────────────────────
+if [ -f "$MANIFEST" ]; then
+    if grep -q 'cuberemote.fileProvider' "$MANIFEST"; then
+        echo "[11c] $MANIFEST  (skip — FileProvider 이미)"
+    else
+        echo "[11c] $MANIFEST  FileProvider 주입"
+        # </application> 직전에 provider 삽입
+        sed -i 's|</application>|        <provider\n            android:name="androidx.core.content.FileProvider"\n            android:authorities="${applicationId}.fileProvider"\n            android:exported="false"\n            android:grantUriPermissions="true">\n            <meta-data\n                android:name="android.support.FILE_PROVIDER_PATHS"\n                android:resource="@xml/cuberemote_file_paths" />\n        </provider>\n    </application>|' "$MANIFEST"
     fi
 fi
 

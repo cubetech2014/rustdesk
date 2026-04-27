@@ -100,6 +100,12 @@ class AgentService {
       await _initOnce();
       final pwd = prefs.getString(PREF_RD_PASSWORD) ?? '';
 
+      // RustDesk 본체 버전 (예: "1.4.6") — 호출 실패 시 빈 값
+      String remoteVersion = '';
+      try {
+        remoteVersion = await bind.mainGetVersion();
+      } catch (_) {}
+
       await ApiClient.sendHeartbeat({
         'device_id':     deviceId,
         'p_id':          pId,
@@ -112,8 +118,8 @@ class AgentService {
         'battery':       await DeviceInfoHelper.getBatteryLevel(),
         'network':       await DeviceInfoHelper.getNetworkType(),
         'platform':      DeviceInfoHelper.platform,
-        'agent_version': AGENT_VERSION,
-        'remote_version': '',
+        'agent_version': AGENT_VERSION,        // 빌드 tag (apply.sh 가 갱신)
+        'remote_version': remoteVersion,       // RustDesk 본체 버전
         'app_version':   await DeviceInfoHelper.getAppVersion(),
         'os_version':    await DeviceInfoHelper.getOsVersion(),
         'rustdesk_password': pwd,

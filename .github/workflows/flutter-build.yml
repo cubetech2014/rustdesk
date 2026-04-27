@@ -902,6 +902,7 @@ jobs:
         shell: bash
         env:
           CUBE_FLAVOR: ${{ matrix.job.flavor }}
+          CUBE_TAG: ${{ inputs.upload-tag }}
         run: bash patches/apply.sh
       - name: Install flutter
         uses: subosito/flutter-action@v2
