@@ -1082,16 +1082,13 @@ jobs:
           # env.ANDROID_SIGN_TOOL_VERSION is set by Step "Setup sign tool version variable"
           BUILD_TOOLS_VERSION: ${{ env.ANDROID_SIGN_TOOL_VERSION }}
 
-      - name: Rename signed APK + create tag-less copy
+      - name: Rename signed APK (drop -signed suffix)
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
         shell: bash
         run: |
           SRC="${{steps.sign-rustdesk.outputs.signedReleaseFile}}"
-          TAG="signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk"
-          LATEST="signed-apk/cuberemote-${{ matrix.job.flavor }}.apk"
-          cp "$SRC" "$TAG"
-          cp "$SRC" "$LATEST"
-          rm -f "$SRC"  # 'signedReleaseFile' 변수 가리키는 -signed 접미사 파일 정리
+          DST="signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk"
+          mv "$SRC" "$DST"
 
       - name: Upload Artifacts
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
@@ -1108,7 +1105,6 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
-            signed-apk/cuberemote-${{ matrix.job.flavor }}.apk
 
       - name: Publish unsigned apk package
         if: env.ANDROID_SIGNING_KEY == null && env.UPLOAD_ARTIFACT == 'true'
