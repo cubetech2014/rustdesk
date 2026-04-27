@@ -4,29 +4,31 @@
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 
 class DeviceInfoHelper {
-  static String? _deviceIdCache;
+  /// RustDesk가 발급한 9자리 ID. rustdesk:// 딥링크 / 원격 제어 식별자.
+  /// RustDesk 초기화 후에만 받을 수 있음. 못 받으면 null.
+  static Future<String?> getRustDeskId() async {
+    try {
+      final id = await bind.mainGetMyId();
+      if (id.isNotEmpty) return id;
+    } catch (_) {}
+    return null;
+  }
 
-  /// RustDesk ID를 device_id로 사용 (원격 제어 시 동일 식별자로 통일)
-  static Future<String> getDeviceId({String? rustDeskId}) async {
-    if (rustDeskId != null && rustDeskId.isNotEmpty) {
-      _deviceIdCache = rustDeskId;
-      return rustDeskId;
-    }
-    if (_deviceIdCache != null) return _deviceIdCache!;
-
+  /// 폴백 device id (디버그/표시용).
+  /// heartbeat 의 device_id 로는 사용 금지 — getRustDeskId() 만 사용.
+  static Future<String> getFallbackId() async {
     final info = DeviceInfoPlugin();
     if (Platform.isAndroid) {
       final a = await info.androidInfo;
-      _deviceIdCache = 'AND-${a.id}';
+      return 'AND-${a.id}';
     } else if (Platform.isWindows) {
       final w = await info.windowsInfo;
-      _deviceIdCache = 'WIN-${w.computerName}';
-    } else {
-      _deviceIdCache = 'UNK-${DateTime.now().millisecondsSinceEpoch}';
+      return 'WIN-${w.computerName}';
     }
-    return _deviceIdCache!;
+    return 'UNK-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   static Future<String> getDeviceName() async {

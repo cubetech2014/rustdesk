@@ -43,7 +43,10 @@ class AgentService {
       final deviceNm = prefs.getString(PREF_DEVICE_NM) ?? '';
       if (shopId.isEmpty) return;
 
-      final deviceId = await DeviceInfoHelper.getDeviceId();
+      // RustDesk 가 ID 발급하기 전엔 heartbeat 보류 (fake device_id 로 row 만들지 않기 위함)
+      final deviceId = await DeviceInfoHelper.getRustDeskId();
+      if (deviceId == null) return;
+
       await ApiClient.sendHeartbeat({
         'device_id':     deviceId,
         'p_id':          pId,
