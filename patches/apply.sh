@@ -97,9 +97,9 @@ fi
 #   - ic_launcher_round.png
 #   - ic_stat_logo.png (notification)
 # ────────────────────────────────────────────────────────────
-ICONS_SRC="overlay/icons/agent"
+ICONS_SRC="overlay/icons/$FLAVOR"
 if [ -d "$ICONS_SRC" ]; then
-    echo "[3/9] 아이콘 복사: $ICONS_SRC → mipmap-*dpi/"
+    echo "[3/9] 아이콘 복사: $ICONS_SRC → mipmap-*dpi/ (flavor=$FLAVOR)"
     for dpi in hdpi xhdpi xxhdpi xxxhdpi; do
         SRC="$ICONS_SRC/$dpi.png"
         DST_DIR="flutter/android/app/src/main/res/mipmap-$dpi"
@@ -323,6 +323,56 @@ if [ -f "$SETTINGS_DART" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [13] res/msi/preprocess.py — Windows MSI 설치 마법사 브랜딩
+#   본가 워크플로우는 `python preprocess.py --arp -d ...` 로 호출하면서
+#   --app-name / --manufacturer 인자를 안 넘겨 default 값("RustDesk"/"PURSLANE")이
+#   그대로 Includes.wxi → Strings.wxl 까지 박힘.
+#   default 값 자체를 sed 로 교체하면 워크플로우 호출 변경 없이 적용됨.
+#   (EXE winres 는 [4/9] Cargo.toml 에서 별도 처리, 여기는 MSI 래퍼만)
+# ────────────────────────────────────────────────────────────
+PREPROCESS_PY="res/msi/preprocess.py"
+if [ -f "$PREPROCESS_PY" ]; then
+    if grep -q "default=\"$APP_NAME_NEW\"" "$PREPROCESS_PY"; then
+        echo "[13] $PREPROCESS_PY  (skip — 이미 $APP_NAME_NEW)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[13] $PREPROCESS_PY  MSI installer 브랜딩 (app-name=$APP_NAME_NEW, manufacturer=CubeTech)"
+        sed -i \
+            -e "s|default=\"RustDesk\"|default=\"$APP_NAME_NEW\"|" \
+            -e "s|default=\"PURSLANE\"|default=\"CubeTech\"|" \
+            "$PREPROCESS_PY"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# [14] Windows EXE/MSI 아이콘 — res/icon.ico 덮어쓰기
+#   Cargo.toml winres + res/msi/preprocess.py 가 모두 res/icon.ico 사용
+#   → 한 파일 덮어쓰면 EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키 모두 적용
+#   우선순위:
+#     1. overlay/icons/windows/{flavor}.ico (수제, 멀티 사이즈)
+#     2. ImageMagick 으로 overlay/icons/{flavor}/xxxhdpi.png → ICO 자동 변환
+#        (GitHub Actions ubuntu/windows runner 모두 magick 사전 설치)
+#     3. 둘 다 없으면 skip (RustDesk 기본 아이콘 잔존, 빌드는 안 깨짐)
+# ────────────────────────────────────────────────────────────
+TARGET_ICO="res/icon.ico"
+PRECOOKED_ICO="overlay/icons/windows/${FLAVOR}.ico"
+SOURCE_PNG="overlay/icons/${FLAVOR}/xxxhdpi.png"
+
+if [ -f "$PRECOOKED_ICO" ]; then
+    echo "[14] $TARGET_ICO  ← $PRECOOKED_ICO (수제 멀티사이즈)"
+    cp "$PRECOOKED_ICO" "$TARGET_ICO"
+    PATCHED=$((PATCHED+1))
+elif command -v magick >/dev/null 2>&1 && [ -f "$SOURCE_PNG" ]; then
+    echo "[14] $TARGET_ICO  ← $SOURCE_PNG (ImageMagick 자동 변환)"
+    magick "$SOURCE_PNG" -define icon:auto-resize=256,128,96,64,48,32,16 "$TARGET_ICO"
+    PATCHED=$((PATCHED+1))
+else
+    echo "[14] Windows 아이콘 소스 없음 — RustDesk 기본 아이콘 잔존"
+    echo "    overlay/icons/windows/${FLAVOR}.ico 추가하거나 ImageMagick 설치 필요"
+fi
+
+# ────────────────────────────────────────────────────────────
 # 검증
 # ────────────────────────────────────────────────────────────
 echo ""
@@ -352,6 +402,7 @@ check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
+check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 
 if [ "$FAIL" = "1" ]; then
     echo ""
