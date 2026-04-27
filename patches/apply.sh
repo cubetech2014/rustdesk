@@ -197,6 +197,38 @@ if [ -f "$MAIN_DART" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [10/11] flutter_ffi.rs initialize() — incoming-only 모드 강제
+#   → ConnectionPage 자동 제거 (POS는 원격 제어 받기만)
+#   home_page.dart 의 `if (!bind.isIncomingOnly())` 분기로 자동 적용
+# ────────────────────────────────────────────────────────────
+FFI_RS="src/flutter_ffi.rs"
+if [ -f "$FFI_RS" ]; then
+    if grep -q 'CubeRemote: force incoming-only' "$FFI_RS"; then
+        echo "[10/11] $FFI_RS  (skip — 이미 주입됨)"
+    else
+        echo "[10/11] $FFI_RS  incoming-only 강제 주입"
+        # initialize() 함수 시작 직후에 한 줄 추가
+        sed -i '/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\    // CubeRemote: force incoming-only (POS agent — peer-controlled)\n    config::HARD_SETTINGS.write().unwrap().insert("conn-type".to_string(), "incoming".to_string());' "$FFI_RS"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# [11/11] settings_page.dart — CubeRemote 섹션 추가 (장비 등록 / 재등록)
+# ────────────────────────────────────────────────────────────
+SETTINGS_DART="flutter/lib/mobile/pages/settings_page.dart"
+if [ -f "$SETTINGS_DART" ]; then
+    if grep -q "cuberemote/settings_tile" "$SETTINGS_DART"; then
+        echo "[11/11] $SETTINGS_DART  (skip — 이미 주입됨)"
+    else
+        echo "[11/11] $SETTINGS_DART  CubeRemote 설정 메뉴 주입"
+        # import 추가 (settings_ui import 다음 라인에)
+        sed -i "/^import 'package:settings_ui\/settings_ui.dart';/a import '../../cuberemote/settings_tile.dart';" "$SETTINGS_DART"
+        # customClientSection 다음에 우리 섹션 한 줄 삽입
+        sed -i 's|^        customClientSection,$|        customClientSection,\n        CubeRemoteSettingsSection.build(context),|' "$SETTINGS_DART"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # 검증
 # ────────────────────────────────────────────────────────────
 echo ""
@@ -221,6 +253,8 @@ check "APP_NAME"       "$CONFIG_RS"   "RwLock::new(\"$APP_NAME_NEW\""
 check "Android app_name" "$STRINGS_XML" ">$APP_NAME_NEW<"
 check "main.dart 훅"   "$MAIN_DART"   "cuberemote/main_hook"
 check "Cargo winres"   "$CARGO"       "ProductName = \"$APP_NAME_NEW\""
+check "incoming-only"  "$FFI_RS"      "CubeRemote: force incoming-only"
+check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 
 if [ "$FAIL" = "1" ]; then
     echo ""

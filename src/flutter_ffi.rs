@@ -38,6 +38,8 @@ lazy_static::lazy_static! {
 }
 
 fn initialize(app_dir: &str, custom_client_config: &str) {
+    // CubeRemote: force incoming-only (POS agent — peer-controlled)
+    config::HARD_SETTINGS.write().unwrap().insert("conn-type".to_string(), "incoming".to_string());
     flutter::async_tasks::start_flutter_async_runner();
     // `APP_DIR` is set in `main_get_data_dir_ios()` on iOS.
     #[cfg(not(target_os = "ios"))]
