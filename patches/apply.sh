@@ -213,6 +213,19 @@ if [ -f "$FFI_RS" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [10b] mobile/pages/home_page.dart — 채팅 탭 제거 (POS 는 채팅 안 씀)
+# ────────────────────────────────────────────────────────────
+HOME_DART="flutter/lib/mobile/pages/home_page.dart"
+if [ -f "$HOME_DART" ]; then
+    if grep -q "// CubeRemote: ChatPage removed" "$HOME_DART"; then
+        echo "[10b] $HOME_DART  (skip — 이미 패치)"
+    else
+        echo "[10b] $HOME_DART  채팅 탭 제거"
+        sed -i 's|_pages.addAll(\[ChatPage(type: ChatPageType.mobileMain), ServerPage()\]);|_pages.add(ServerPage()); // CubeRemote: ChatPage removed|' "$HOME_DART"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # [11/11] settings_page.dart — CubeRemote 섹션 추가 (장비 등록 / 재등록)
 # ────────────────────────────────────────────────────────────
 SETTINGS_DART="flutter/lib/mobile/pages/settings_page.dart"
@@ -255,6 +268,7 @@ check "main.dart 훅"   "$MAIN_DART"   "cuberemote/main_hook"
 check "Cargo winres"   "$CARGO"       "ProductName = \"$APP_NAME_NEW\""
 check "incoming-only"  "$FFI_RS"      "CubeRemote: force incoming-only"
 check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
+check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 
 if [ "$FAIL" = "1" ]; then
     echo ""

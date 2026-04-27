@@ -7,6 +7,7 @@ import 'package:flutter_hbb/models/platform_model.dart';
 import 'api_client.dart';
 import 'config.dart';
 import 'device_info.dart';
+import 'update_service.dart';
 
 const PREF_RD_PASSWORD = 'cuberemote_rustdesk_password';
 
@@ -63,6 +64,9 @@ class AgentService {
     if (_running) return;
     if (!await isAgentMode()) return;
     _running = true;
+
+    // 시작과 함께 백그라운드 업데이트 체크 (1회)
+    UpdateService.checkInBackground();
 
     // 즉시 1회 전송 후 주기 시작
     _sendOnce();
