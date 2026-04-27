@@ -6,6 +6,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -76,9 +77,7 @@ class UpdateService {
   }
 
   /// 다운로드 + (Android) PackageInstaller / (Windows) 실행 / (기타) launchUrl
-  /// - 진행 다이얼로그 표시
-  /// - Android: APK 다운로드 후 system installer 다이얼로그
-  /// - Windows: EXE/MSI 다운로드 후 Process.run 으로 실행 (앱 자기 자신 종료 후 인스톨러 진행)
+  /// settings_tile 등 Material context 안에서 호출 — showDialog 사용 OK
   static Future<void> downloadAndInstall(BuildContext context, UpdateInfo info) async {
     if (Platform.isAndroid) {
       await _downloadAndInstallAndroid(context, info);
@@ -86,6 +85,87 @@ class UpdateService {
       await _downloadAndRunWindows(context, info);
     } else {
       await launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /// Material context 가 없는 곳 (앱 시작 시 _UpdateGate 등) 에서 호출하는 버전
+  /// Get.dialog 사용 — RustDesk 의 GetMaterialApp navigator 활용
+  static Future<void> downloadAndInstallGlobal(UpdateInfo info) async {
+    if (Platform.isAndroid) {
+      await _downloadAndInstallAndroidGlobal(info);
+    } else if (Platform.isWindows) {
+      await _downloadAndRunWindowsGlobal(info);
+    } else {
+      await launchUrl(Uri.parse(info.url), mode: LaunchMode.externalApplication);
+    }
+  }
+
+  static Future<void> _downloadAndInstallAndroidGlobal(UpdateInfo info) async {
+    Get.dialog(
+      AlertDialog(
+        title: Text('업데이트 v${info.version}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            LinearProgressIndicator(),
+            SizedBox(height: 12),
+            Text('다운로드 중...'),
+          ],
+        ),
+      ),
+      barrierDismissible: false,
+    );
+    String? errorMsg;
+    try {
+      final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
+      final file = File('${dir.path}/cuberemote-update.apk');
+      final resp = await http.get(Uri.parse(info.url));
+      if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+      await file.writeAsBytes(resp.bodyBytes);
+      await _installChannel.invokeMethod('install', {'path': file.path});
+    } catch (e) {
+      errorMsg = e.toString();
+    }
+    if (Get.isDialogOpen ?? false) Get.back();
+    if (errorMsg != null) {
+      Get.snackbar('업데이트 실패', errorMsg, snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  static Future<void> _downloadAndRunWindowsGlobal(UpdateInfo info) async {
+    Get.dialog(
+      AlertDialog(
+        title: Text('업데이트 v${info.version}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            LinearProgressIndicator(),
+            SizedBox(height: 12),
+            Text('다운로드 중... 완료 후 인스톨러가 실행됩니다.'),
+          ],
+        ),
+      ),
+      barrierDismissible: false,
+    );
+    String? errorMsg;
+    try {
+      final dir = await getTemporaryDirectory();
+      final ext = info.url.toLowerCase().endsWith('.msi') ? 'msi' : 'exe';
+      final file = File('${dir.path}/cuberemote-update.$ext');
+      final resp = await http.get(Uri.parse(info.url));
+      if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+      await file.writeAsBytes(resp.bodyBytes);
+      if (ext == 'msi') {
+        await Process.start('msiexec', ['/i', file.path], mode: ProcessStartMode.detached);
+      } else {
+        await Process.start(file.path, [], mode: ProcessStartMode.detached);
+      }
+    } catch (e) {
+      errorMsg = e.toString();
+    }
+    if (Get.isDialogOpen ?? false) Get.back();
+    if (errorMsg != null) {
+      Get.snackbar('업데이트 실패', errorMsg, snackPosition: SnackPosition.BOTTOM);
     }
   }
 

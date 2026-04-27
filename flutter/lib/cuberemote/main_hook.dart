@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'agent_service.dart';
 import 'config.dart';
@@ -87,29 +88,30 @@ class _UpdateGateState extends State<_UpdateGate> {
 
   Future<void> _maybePrompt() async {
     try {
+      // RustDesk 의 GetMaterialApp navigator 가 init 되도록 살짝 대기
+      await Future.delayed(const Duration(seconds: 2));
       final info = await UpdateService.checkNow().timeout(const Duration(seconds: 8));
       if (info == null || !mounted) return;
       final prefs = await SharedPreferences.getInstance();
       final shown = prefs.getString(_shownKey) ?? '';
       if (shown == info.version && !info.force) return; // 이미 한 번 안내한 동일 버전 (force 면 재표시)
 
-      if (!mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        barrierDismissible: !info.force,
-        builder: (d) => AlertDialog(
+      // _UpdateGate 자체는 MaterialApp 위에 있어 showDialog 가 동작 안 함 — Get.dialog 사용
+      final go = await Get.dialog<bool>(
+        AlertDialog(
           title: Text('새 버전 ${info.version}'),
           content: Text(info.memo.isNotEmpty ? info.memo : '업데이트 하시겠습니까?'),
           actions: [
             if (!info.force)
-              TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('나중에')),
-            FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('업데이트')),
+              TextButton(onPressed: () => Get.back(result: false), child: const Text('나중에')),
+            FilledButton(onPressed: () => Get.back(result: true), child: const Text('업데이트')),
           ],
         ),
+        barrierDismissible: !info.force,
       );
       await prefs.setString(_shownKey, info.version);
-      if (go == true && mounted) {
-        await UpdateService.downloadAndInstall(context, info);
+      if (go == true) {
+        await UpdateService.downloadAndInstallGlobal(info);
       }
     } catch (_) {}
   }
