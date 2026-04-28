@@ -407,6 +407,67 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────
+# [15] Desktop UI 정리 (PC viewer + Windows POS 양쪽)
+#   사용자 요청 (2026-04-28):
+#     a. 좌상단 "CubeRemote 제공" 링크 → remote.cube-tech.co.kr
+#     b. 가운데 5개 peer tab 중 뒤 2개 (Address Book + Group) 제거
+#     c. 설정 페이지 Account 섹션 제거
+#     d. 설정 → 정보 → Website 링크 → cube-tech.co.kr
+#     e. 설정 → 정보 → Privacy Statement 링크 항목 제거
+#     f. 설정 → 일반 → Auto update 항목 제거 (CubeRemote 자체 자동업데이트 사용)
+# ────────────────────────────────────────────────────────────
+
+# [15a] common.dart loadPowered URL
+COMMON_DART="flutter/lib/common.dart"
+if [ -f "$COMMON_DART" ]; then
+    if grep -q "remote.cube-tech.co.kr')" "$COMMON_DART"; then
+        echo "[15a] $COMMON_DART  (skip — loadPowered URL 이미)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[15a] $COMMON_DART  loadPowered URL → remote.cube-tech.co.kr"
+        sed -i "s|launchUrl(Uri.parse('https://rustdesk.com'))|launchUrl(Uri.parse('https://remote.cube-tech.co.kr'))|" "$COMMON_DART"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# [15b] PeerTabIndex.ab + group disable (5개 탭 중 뒤 2개)
+PEER_TAB_MODEL="flutter/lib/models/peer_tab_model.dart"
+if [ -f "$PEER_TAB_MODEL" ]; then
+    if grep -q "// CubeRemote: ab hidden" "$PEER_TAB_MODEL"; then
+        echo "[15b] $PEER_TAB_MODEL  (skip)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[15b] $PEER_TAB_MODEL  Address Book + Group 탭 disable"
+        # delimiter 를 # 으로 (pattern 안에 || 있어서)
+        sed -i 's#!(bind.isDisableAb() || bind.isDisableAccount()),#false, // CubeRemote: ab hidden#' "$PEER_TAB_MODEL"
+        sed -i 's#!(bind.isDisableGroupPanel() || bind.isDisableAccount()),#false, // CubeRemote: group hidden#' "$PEER_TAB_MODEL"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# [15c~f] desktop_setting_page.dart (Account hide + Website URL + Privacy 제거 + Auto Update 제거)
+DESKTOP_SETTINGS="flutter/lib/desktop/pages/desktop_setting_page.dart"
+if [ -f "$DESKTOP_SETTINGS" ]; then
+    if grep -q "// CubeRemote: desktop sections cleaned" "$DESKTOP_SETTINGS"; then
+        echo "[15c-f] $DESKTOP_SETTINGS  (skip)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[15c-f] $DESKTOP_SETTINGS  Account hide + Website URL + Privacy 제거 + Auto update 제거"
+        # marker (idempotent)
+        sed -i "1i // CubeRemote: desktop sections cleaned" "$DESKTOP_SETTINGS"
+        # 15c: Account 섹션 (탭/패널 진입 모두) 항상 hide
+        sed -i 's|!bind.isDisableAccount()|false|g' "$DESKTOP_SETTINGS"
+        # 15d: About 섹션 Website 링크 → cube-tech.co.kr (privacy.html 은 이후 [15e] 가 통째로 제거하므로 영향 없음)
+        sed -i "s|launchUrlString('https://rustdesk.com');|launchUrlString('https://cube-tech.co.kr');|" "$DESKTOP_SETTINGS"
+        # 15e: Privacy Statement InkWell 블록 통째 제거 (perl multiline non-greedy)
+        perl -i -0pe 's|\s+InkWell\(\s+onTap: \(\) \{\s+launchUrlString\(.https://rustdesk\.com/privacy\.html.\);\s+\},\s+child: Text\(\s+translate\(.Privacy Statement.\),\s+style: linkStyle,\s+\)\.marginSymmetric\(vertical: 4\.0\)\),||s' "$DESKTOP_SETTINGS"
+        # 15f: General → Auto update (RustDesk 자체 업데이트, rustdesk.com 가리킴 — 우리는 자체 자동업데이트 사용)
+        sed -i 's|if (showAutoUpdate)|if (false) // CubeRemote: auto update hidden (use our UpdateService)|' "$DESKTOP_SETTINGS"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # 검증
 # ────────────────────────────────────────────────────────────
 echo ""
