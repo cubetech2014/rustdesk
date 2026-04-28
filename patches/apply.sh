@@ -380,6 +380,45 @@ if [ -f "$RUSTDESK_WXS" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [13c] res/msi/Package/Components/Regs.wxs — URL Protocol "rustdesk" 하드코딩
+#   v1.0.16 까지 URL Protocol 이 $(var.ProductLower) 로 등록됨 →
+#     agent  : "cuberemote"          → cuberemote://      등록
+#     viewer : "cuberemote viewer"   → "cuberemote viewer://" (공백 포함, 사실상 깨진 등록)
+#   대시보드는 항상 rustdesk:// 호출 → 윈도우 가 핸들러 못 찾아 "앱이 없습니다" 표시.
+#   해결: URL Protocol + 그 \shell\open\command 키만 "rustdesk" 로 하드코딩.
+#   ($(var.RegKeyRoot) 의 file extension 등록은 그대로 — 별개 기능)
+#   sed/bash 의 backslash 처리가 신뢰 안 되어 python3 로 안전 치환.
+#   (v1.0.17 빌드 후 사용자가 "앱이 없습니다" 다이얼로그 보고 발견)
+# ────────────────────────────────────────────────────────────
+REGS_WXS="res/msi/Package/Components/Regs.wxs"
+if [ -f "$REGS_WXS" ]; then
+    if grep -q 'Key="rustdesk"' "$REGS_WXS"; then
+        echo "[13c] $REGS_WXS  (skip — rustdesk:// 이미 하드코딩)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[13c] $REGS_WXS  URL Protocol 을 rustdesk:// 로 하드코딩"
+        python3 - "$REGS_WXS" <<'PYEOF'
+import sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+bs = chr(92)
+content = content.replace(
+    'Key="$(var.ProductLower)"',
+    'Key="rustdesk"',
+).replace(
+    'Key="$(var.ProductLower)' + bs,
+    'Key="rustdesk' + bs,
+)
+with open(path, "w", encoding="utf-8", newline="") as f:
+    f.write(content)
+print(f"  (Python: {path} 갱신)")
+PYEOF
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # [14] Windows EXE/MSI 아이콘 — res/icon.ico 덮어쓰기
 #   Cargo.toml winres + res/msi/preprocess.py 가 모두 res/icon.ico 사용
 #   → 한 파일 덮어쓰면 EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키 모두 적용
