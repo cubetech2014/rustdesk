@@ -181,12 +181,94 @@ class _UpdateGateState extends State<_UpdateGate> {
 
       final go = await Get.dialog<bool>(
         AlertDialog(
-          title: Text('새 버전 ${info.version}'),
-          content: Text(info.memo.isNotEmpty ? info.memo : '업데이트 하시겠습니까?'),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'NEW',
+                  style: TextStyle(
+                    color: Color(0xFFE53935),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                info.version,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 480, maxWidth: 480, maxHeight: 380),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '새 버전이 출시되었습니다. 지금 업데이트하시겠습니까?',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF334155)),
+                ),
+                const SizedBox(height: 16),
+                Container(height: 1, color: const Color(0xFFE5E7EB)),
+                const SizedBox(height: 14),
+                const Text(
+                  '업데이트 내역',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        info.memo.isNotEmpty ? info.memo : '업데이트 내역이 없습니다.',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          height: 1.55,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           actions: [
             if (!info.force)
-              TextButton(onPressed: () => Get.back(result: false), child: const Text('나중에')),
-            FilledButton(onPressed: () => Get.back(result: true), child: const Text('업데이트')),
+              TextButton(
+                onPressed: () => Get.back(result: false),
+                child: const Text('나중에'),
+              ),
+            FilledButton(
+              onPressed: () => Get.back(result: true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              child: const Text('업데이트', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         barrierDismissible: !info.force,

@@ -139,12 +139,70 @@ class _UpdateTileWidgetState extends State<_UpdateTileWidget> {
       context: ctx,
       barrierDismissible: !info.force,
       builder: (d) => AlertDialog(
-        title: Text('새 버전 ${info.version}'),
-        content: Text(info.memo.isNotEmpty ? info.memo : '업데이트 하시겠습니까?'),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: const Text(
+                'NEW',
+                style: TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.5),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(info.version, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 320, maxWidth: 360, maxHeight: 320),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '새 버전이 출시되었습니다.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF334155)),
+              ),
+              const SizedBox(height: 14),
+              Container(height: 1, color: const Color(0xFFE5E7EB)),
+              const SizedBox(height: 12),
+              const Text(
+                '업데이트 내역',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B), letterSpacing: 0.8),
+              ),
+              const SizedBox(height: 6),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      info.memo.isNotEmpty ? info.memo : '업데이트 내역이 없습니다.',
+                      style: const TextStyle(fontSize: 12, height: 1.55, color: Color(0xFF1F2937)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [
           if (!info.force)
             TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('나중에')),
-          FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('업데이트')),
+          FilledButton(
+            onPressed: () => Navigator.pop(d, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+            child: const Text('업데이트', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

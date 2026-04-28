@@ -1,0 +1,166 @@
+# 경량 Windows 빌드 워크플로우 (수동 트리거 / quick iteration 용)
+#
+# 기존 flutter-build.yml 은 6개 matrix job + MSI/APK/portable 모두 만들어 ~55분 걸림.
+# 이 워크플로우는 단일 flavor 의 Windows EXE + 의존 DLL 폴더만 산출 → ~10~15분 (cache hit 시 ~5~8분).
+#
+# 사용법:
+#   GitHub Actions → "Quick Windows Build" → Run workflow → flavor / tag 입력
+#
+# 산출물:
+#   Artifact: cuberemote-{flavor}-windows-quick-{tag}.zip
+#   내용: rustdesk.exe + 모든 의존 DLL + flutter assets (실행 가능한 폴더)
+#   주의: MSI 인스톨러 X — exe 폴더 통째로 압축 풀어 직접 실행
+
+name: Quick Windows Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: '빌드 flavor (agent / viewer / support)'
+        type: choice
+        default: viewer
+        options:
+          - viewer
+          - agent
+          - support
+      tag:
+        description: 'AGENT_VERSION 으로 박힐 태그 (예: v1.0.99-test)'
+        type: string
+        default: v0.0.0-quick
+
+env:
+  # 기존 flutter-build.yml 과 버전 일치 — 캐시 호환성 위해
+  FLUTTER_VERSION: '3.24.5'
+  LLVM_VERSION: '15.0.6'
+  RUST_VERSION: '1.75'
+  VCPKG_COMMIT_ID: '6f29f12e82a8293156836ad81cc9bf5af41fe836'
+  BRIDGE_VERSION: '1.80.1'
+
+jobs:
+  windows-quick:
+    name: Quick Windows Build (${{ inputs.flavor }})
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      # ── 1. 소스 체크아웃 (shallow + submodules) ──
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      # ── 2. vcpkg binary cache 활성화 (NuGet feed) ──
+      # 이 환경변수 셋업하면 lukka/run-vcpkg 가 pre-built binary 가져옴
+      # → 매 빌드마다 vcpkg 재컴파일 안 함 (~13분 절감)
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      # ── 3. CubeRemote 브랜딩 패치 (apply.sh) ──
+      # FLAVOR / TAG 환경변수로 분기, 아이콘 / 서버 주소 / 라벨 / MSI 등 모두 우리 브랜드로
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        env:
+          CUBE_FLAVOR: ${{ inputs.flavor }}
+          CUBE_TAG: ${{ inputs.tag }}
+        run: bash patches/apply.sh
+
+      # ── 4. LLVM (bindgen / Rust c++ FFI 의존) ──
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      # ── 5. Flutter (cache 자동) ──
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2.12.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      # ── 6. Flutter engine 교체 (RustDesk 가 자체 fork engine 사용) ──
+      # 이거 없으면 빌드 자체는 가능하지만 일부 hwcodec / scrcpy 등 깨질 수 있음
+      - name: Replace engine with rustdesk custom flutter engine
+        shell: pwsh
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          mv -Force windows-x64-release/* C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+      # ── 7. Rust toolchain (MSVC 타겟) ──
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      # ── 8. Rust crate 컴파일 캐시 (가장 효과 큼) ──
+      # cache-on-failure: 빌드 실패해도 cache 보존 → 다음 시도 빨라짐
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: quick-windows-${{ inputs.flavor }}
+          cache-on-failure: true
+
+      # ── 9. vcpkg 셋업 + binary cache 활용 ──
+      - name: Setup vcpkg with binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies (FFmpeg / libvpx / magnum-opus 등)
+        shell: bash
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+        run: |
+          $VCPKG_ROOT/vcpkg install \
+            --triplet x64-windows-static \
+            --x-install-root="$VCPKG_ROOT/installed"
+
+      # ── 10. Rust-Dart 브릿지 코드 생성 ──
+      # 정식 빌드는 별도 generate-bridge job 에서 ubuntu 로 만들지만,
+      # quick build 는 windows 에서 직접 생성 (~3분 추가)
+      - name: Install bridge codegen
+        shell: bash
+        run: |
+          cargo install flutter_rust_bridge_codegen --version ${{ env.BRIDGE_VERSION }} --locked || true
+          dart pub global activate ffigen
+
+      - name: Generate Rust-Dart bridge
+        shell: bash
+        run: python build.py --skip-cargo
+
+      # ── 11. 본 빌드 (Rust + Flutter) ──
+      # build.py 옵션 (기존 flutter-build.yml 과 동일):
+      #   --portable        : portable 빌드 모드
+      #   --hwcodec         : 하드웨어 코덱 활성화
+      #   --flutter         : Flutter UI (sciter 아님)
+      #   --vram            : VRAM 인코딩
+      #   --skip-portable-pack : portable-packer .exe 스킵 (필요 없음)
+      - name: Build rustdesk (Rust + Flutter)
+        shell: pwsh
+        run: |
+          python build.py --portable --hwcodec --flutter --vram --skip-portable-pack
+          # 산출물 폴더 정리
+          mv ./flutter/build/windows/x64/runner/Release ./output
+          # 산출물 크기 확인
+          Get-ChildItem -Recurse ./output | Measure-Object -Sum Length | Select-Object @{N='Size(MB)';E={[math]::Round($_.Sum / 1MB, 2)}}, Count
+
+      # ── 12. Artifact 업로드 ──
+      - name: Upload Windows EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuberemote-${{ inputs.flavor }}-windows-quick-${{ inputs.tag }}
+          path: ./output
+          retention-days: 7
+          if-no-files-found: error
