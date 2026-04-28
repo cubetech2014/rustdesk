@@ -281,6 +281,10 @@ jobs:
         # support flavor 는 1회용 portable .exe 만 배포 (MSI 빌드 건너뜀)
         if: env.UPLOAD_ARTIFACT == 'true' && matrix.job.flavor != 'support'
         run: |
+          # v1.0.22 에서 self-extracted step 을 support 만 실행되도록 바꾸자
+          # SignOutput 폴더가 안 만들어진 상태로 진입해서 mv 가 실패함
+          # → MSI build 가 자체적으로 mkdir 해야 함 (v1.0.23 fix)
+          mkdir -p ./SignOutput
           pushd ./res/msi
           python preprocess.py --arp -d ../../rustdesk
           nuget restore msi.sln
