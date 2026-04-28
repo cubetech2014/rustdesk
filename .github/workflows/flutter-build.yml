@@ -263,7 +263,8 @@ jobs:
 
       - name: Build self-extracted executable
         shell: bash
-        if: env.UPLOAD_ARTIFACT == 'true'
+        # support flavor 만 portable .exe 산출 (agent/viewer 는 .msi 만 운영 사용)
+        if: env.UPLOAD_ARTIFACT == 'true' && matrix.job.flavor == 'support'
         run: |
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable

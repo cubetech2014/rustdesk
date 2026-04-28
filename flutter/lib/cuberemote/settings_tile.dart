@@ -1,11 +1,14 @@
 // CubeRemote 설정 페이지 진입점 (모바일)
-//  - 장비 등록 / 재등록
+//  - 장비 등록 / 재등록 (agent)
+//  - 로그인 정보 + 로그아웃 (viewer)
 //  - 업데이트 확인 (수동) + 새 버전 발견 시 다운로드/설치
 //  - 현재 버전 표시
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:settings_ui/settings_ui.dart';
 import 'config.dart';
 import 'registration_page.dart';
+import 'session_service.dart';
 import 'update_service.dart';
 
 class CubeRemoteSettingsSection {
@@ -13,7 +16,7 @@ class CubeRemoteSettingsSection {
     return SettingsSection(
       title: const Text('CubeRemote'),
       tiles: [
-        // 등록 메뉴는 agent 만 (viewer 는 매장 등록 안 함)
+        // agent: 매장 등록 / 재등록
         if (isAgentFlavor)
           SettingsTile(
             title: const Text('장비 등록 / 재등록'),
@@ -27,9 +30,55 @@ class CubeRemoteSettingsSection {
               ));
             },
           ),
+        // viewer: 로그인 사용자 정보 (탭 안 됨, 정보 표시만)
+        if (isViewerFlavor && SessionService.user != null)
+          SettingsTile(
+            title: Text('로그인: ${SessionService.user!.id}'),
+            description: Text('${SessionService.user!.name} / ${SessionService.user!.pNm}'),
+            leading: const Icon(Icons.account_circle_outlined),
+          ),
         // 업데이트 확인은 agent + viewer 둘 다
         _UpdateTile(),
+        // viewer: 로그아웃
+        if (isViewerFlavor)
+          _LogoutTile(),
       ],
+    );
+  }
+}
+
+class _LogoutTile extends AbstractSettingsTile {
+  const _LogoutTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.logout, color: Color(0xFFE53935)),
+      title: const Text('로그아웃', style: TextStyle(color: Color(0xFFE53935))),
+      subtitle: const Text('서버 세션 종료 후 로그인 화면으로'),
+      onTap: () async {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (d) => AlertDialog(
+            title: const Text('로그아웃'),
+            content: const Text('정말 로그아웃하시겠습니까?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('취소')),
+              FilledButton(
+                onPressed: () => Navigator.pop(d, true),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+                child: const Text('로그아웃'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+        await SessionService.logout();
+        // _ViewerAuthGate 는 widget tree 의 root 라 안에서 setState 트리거 어려움
+        // → 앱 자체 종료, 사용자가 다시 실행하면 깨끗하게 로그인 화면
+        await Future.delayed(const Duration(milliseconds: 200));
+        exit(0);
+      },
     );
   }
 }

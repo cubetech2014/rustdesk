@@ -1,7 +1,9 @@
 // CubeRemote viewer 로그인 페이지 (Windows/Android 양쪽)
 // dashboard 의 Login.jsx 디자인 참고 — navy 배경 + white card + 빨강 액센트
 // 단일 기기 정책: 다른 기기 활성 세션 발견 시 confirm 다이얼로그
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 import 'session_service.dart';
 
 class ViewerLoginPage extends StatefulWidget {
@@ -111,6 +113,19 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
     );
   }
 
+  Future<void> _onClose() async {
+    // Desktop: window 종료 (앱 종료). Mobile: 그냥 SystemNavigator.pop 같은 효과
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      try {
+        await windowManager.destroy();
+      } catch (_) {}
+      exit(0);
+    } else {
+      // Android: 그냥 finish (RustDesk 종료는 어차피 OS 가 메모리 회수)
+      exit(0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -122,143 +137,169 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
       ),
       home: Scaffold(
         backgroundColor: const Color(0xFF0B1220),
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(36, 44, 36, 32),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.4),
-                      blurRadius: 30,
-                      offset: const Offset(0, 12),
+        body: Stack(
+          children: [
+            // 메인 카드
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.4),
+                          blurRadius: 30,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 로고 + 타이틀
-                    Center(
-                      child: Container(
-                        width: 80, height: 80,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFE53935).withOpacity(0.25),
-                              blurRadius: 24, offset: const Offset(0, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // 로고 + 타이틀 (컴팩트)
+                        Center(
+                          child: Container(
+                            width: 64, height: 64,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFE53935).withOpacity(0.25),
+                                  blurRadius: 18, offset: const Offset(0, 8),
+                                ),
+                              ],
                             ),
-                          ],
+                            child: const Icon(
+                              Icons.desktop_windows_outlined,
+                              size: 36, color: Color(0xFFE53935),
+                            ),
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.desktop_windows_outlined,
-                          size: 44, color: Color(0xFFE53935),
+                        const SizedBox(height: 12),
+                        const Center(
+                          child: Text(
+                            'CubeRemote',
+                            style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A), letterSpacing: -0.5,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    const Center(
-                      child: Text(
-                        'CubeRemote',
-                        style: TextStyle(
-                          fontSize: 26, fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A), letterSpacing: -0.6,
+                        const SizedBox(height: 2),
+                        const Center(
+                          child: Text(
+                            'POS 원격 모니터링 뷰어',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Center(
-                      child: Text(
-                        'POS 원격 모니터링 뷰어',
-                        style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
+                        const SizedBox(height: 20),
 
-                    if (_error != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFFECACA)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline, size: 18, color: Color(0xFFB91C1C)),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13))),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
+                        if (_error != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFFECACA)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline, size: 16, color: Color(0xFFB91C1C)),
+                                const SizedBox(width: 6),
+                                Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 12))),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
 
-                    _label('아이디'),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _id,
-                      autofocus: true,
-                      decoration: _decoration(Icons.person_outline, '아이디를 입력하세요'),
-                      onSubmitted: (_) => _submit(),
-                    ),
-                    const SizedBox(height: 16),
-                    _label('비밀번호'),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _pw,
-                      obscureText: _obscure,
-                      decoration: _decoration(Icons.lock_outline, '비밀번호를 입력하세요').copyWith(
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20),
-                          onPressed: () => setState(() => _obscure = !_obscure),
+                        _label('아이디'),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _id,
+                          autofocus: true,
+                          decoration: _decoration(Icons.person_outline, '아이디를 입력하세요'),
+                          onSubmitted: (_) => _submit(),
                         ),
-                      ),
-                      onSubmitted: (_) => _submit(),
-                    ),
-                    const SizedBox(height: 24),
+                        const SizedBox(height: 12),
+                        _label('비밀번호'),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _pw,
+                          obscureText: _obscure,
+                          decoration: _decoration(Icons.lock_outline, '비밀번호를 입력하세요').copyWith(
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
+                              onPressed: () => setState(() => _obscure = !_obscure),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                          onSubmitted: (_) => _submit(),
+                        ),
+                        const SizedBox(height: 18),
 
-                    SizedBox(
-                      height: 50,
-                      child: FilledButton(
-                        onPressed: _loading ? null : () => _submit(),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFFE53935),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 4,
+                        SizedBox(
+                          height: 44,
+                          child: FilledButton(
+                            onPressed: _loading ? null : () => _submit(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFE53935),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 4,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 18, height: 18,
+                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                  )
+                                : const Text('로그인', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.3)),
+                          ),
                         ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 22, height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                              )
-                            : const Text('로그인', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.3)),
-                      ),
-                    ),
 
-                    const SizedBox(height: 24),
-                    Center(
-                      child: Text(
-                        'CUBE TECHNOLOGY',
-                        style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade400,
-                          letterSpacing: 1.2, fontWeight: FontWeight.w600,
+                        const SizedBox(height: 14),
+                        Center(
+                          child: Text(
+                            'CUBE TECHNOLOGY',
+                            style: TextStyle(
+                              fontSize: 10, color: Colors.grey.shade400,
+                              letterSpacing: 1.2, fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+            // 우상단 닫기 버튼 (RustDesk 의 hidden-titlebar 라 OS 닫기 X 없음 → 자체 X)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _onClose,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white, size: 20),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -141,13 +141,14 @@ class UpdateService {
           children: const [
             LinearProgressIndicator(),
             SizedBox(height: 12),
-            Text('다운로드 중... 완료 후 인스톨러가 실행됩니다.'),
+            Text('다운로드 중... 완료 후 자동 종료되고 인스톨러가 진행됩니다.'),
           ],
         ),
       ),
       barrierDismissible: false,
     );
     String? errorMsg;
+    bool launchedInstaller = false;
     try {
       final dir = await getTemporaryDirectory();
       final ext = info.url.toLowerCase().endsWith('.msi') ? 'msi' : 'exe';
@@ -156,16 +157,30 @@ class UpdateService {
       if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
       await file.writeAsBytes(resp.bodyBytes);
       if (ext == 'msi') {
-        await Process.start('msiexec', ['/i', file.path], mode: ProcessStartMode.detached);
+        // /passive: UI 표시하되 사용자 입력 없이 자동 진행 (UAC 만 1회)
+        // /norestart: 설치 후 자동 재부팅 안 함
+        await Process.start(
+          'msiexec',
+          ['/i', file.path, '/passive', '/norestart'],
+          mode: ProcessStartMode.detached,
+        );
       } else {
         await Process.start(file.path, [], mode: ProcessStartMode.detached);
       }
+      launchedInstaller = true;
     } catch (e) {
       errorMsg = e.toString();
     }
     if (Get.isDialogOpen ?? false) Get.back();
     if (errorMsg != null) {
       Get.snackbar('업데이트 실패', errorMsg, snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    // 인스톨러가 시작됐으면 viewer 가 자기 .exe 를 잠그고 있어서 MSI 가 진행 못 함
+    // → 1초 후 자체 종료. 사용자는 설치 완료 후 다시 viewer 실행.
+    if (launchedInstaller) {
+      await Future.delayed(const Duration(seconds: 1));
+      exit(0);
     }
   }
 
@@ -217,13 +232,14 @@ class UpdateService {
           children: const [
             LinearProgressIndicator(),
             SizedBox(height: 12),
-            Text('다운로드 중... 완료 후 인스톨러가 실행됩니다.'),
+            Text('다운로드 중... 완료 후 자동 종료되고 인스톨러가 진행됩니다.'),
           ],
         ),
       ),
     );
 
     String? errorMsg;
+    bool launchedInstaller = false;
     try {
       final dir = await getTemporaryDirectory();
       final ext = info.url.toLowerCase().endsWith('.msi') ? 'msi' : 'exe';
@@ -232,12 +248,16 @@ class UpdateService {
       if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
       await file.writeAsBytes(resp.bodyBytes);
 
-      // 인스톨러 실행 (현재 앱은 그대로 — 인스톨러가 알아서 종료/대체)
       if (ext == 'msi') {
-        await Process.start('msiexec', ['/i', file.path], mode: ProcessStartMode.detached);
+        await Process.start(
+          'msiexec',
+          ['/i', file.path, '/passive', '/norestart'],
+          mode: ProcessStartMode.detached,
+        );
       } else {
         await Process.start(file.path, [], mode: ProcessStartMode.detached);
       }
+      launchedInstaller = true;
     } catch (e) {
       errorMsg = e.toString();
     }
@@ -247,6 +267,12 @@ class UpdateService {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('업데이트 실패: $errorMsg')),
       );
+      return;
+    }
+    // viewer 자체 종료 → MSI 가 자기 .exe 잠금 없이 설치 진행
+    if (launchedInstaller) {
+      await Future.delayed(const Duration(seconds: 1));
+      exit(0);
     }
   }
 }

@@ -204,7 +204,10 @@ class _UpdateGateState extends State<_UpdateGate> {
         ),
         barrierDismissible: !info.force,
       );
-      await prefs.setString(_shownKey, info.version);
+      // 사용자가 명시적으로 답한 경우만 마킹 (Get.dialog 가 silently fail 하면 go=null 이라 마킹 안 함 → 다음 시작 시 재시도)
+      if (go != null) {
+        await prefs.setString(_shownKey, info.version);
+      }
       if (go == true) {
         await UpdateService.downloadAndInstallGlobal(info);
       }
