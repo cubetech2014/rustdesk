@@ -34,7 +34,9 @@ env:
   FLUTTER_VERSION: '3.24.5'
   LLVM_VERSION: '15.0.6'
   RUST_VERSION: '1.75'
-  VCPKG_COMMIT_ID: '6f29f12e82a8293156836ad81cc9bf5af41fe836'
+  # 정식 flutter-build.yml 의 VCPKG_COMMIT_ID 와 일치 (vcpkg.json baseline 과도 동일)
+  # 이전 값 6f29f12e... 는 ARMv7 용 — vcpkg.json 의 libjpeg-turbo 3.1.1 등 신상 버전을 못 찾음
+  VCPKG_COMMIT_ID: '120deac3062162151622ca4860575a33844ba10b'
   BRIDGE_VERSION: '1.80.1'
 
 jobs:
