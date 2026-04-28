@@ -407,7 +407,9 @@ if [ -f "$REGS_WXS" ]; then
         SKIPPED=$((SKIPPED+1))
     else
         echo "[13c] $REGS_WXS  URL Protocol 을 rustdesk:// 로 하드코딩"
-        python3 - "$REGS_WXS" <<'PYEOF'
+        # Windows runner Python 기본 stdout = cp1252 (UnicodeEncodeError 위험)
+        # → 한국어 print 금지 + PYTHONIOENCODING=utf-8 보강
+        PYTHONIOENCODING=utf-8 python3 - "$REGS_WXS" <<'PYEOF'
 import sys
 path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as f:
@@ -422,16 +424,20 @@ content = content.replace(
 )
 with open(path, "w", encoding="utf-8", newline="") as f:
     f.write(content)
-print(f"  (Python: {path} 갱신)")
+# ASCII only — Windows runner default stdout 가 cp1252 라 한국어 print 금지
+print("  Python: patched URL Protocol -> rustdesk")
 PYEOF
         PATCHED=$((PATCHED+1))
     fi
 fi
 
 # ────────────────────────────────────────────────────────────
-# [14] Windows EXE/MSI 아이콘 — res/icon.ico 덮어쓰기
-#   Cargo.toml winres + res/msi/preprocess.py 가 모두 res/icon.ico 사용
-#   → 한 파일 덮어쓰면 EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키 모두 적용
+# [14] Windows EXE/MSI/Tray 아이콘 — res/icon.ico + res/tray-icon.ico 덮어쓰기
+#   res/icon.ico:        Cargo.toml winres + res/msi/preprocess.py 사용
+#                        → EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키
+#   res/tray-icon.ico:   src/tray.rs 의 include_bytes! 로 임베드
+#                        → 시스템 트레이 아이콘 (작업 표시줄 우하단)
+#   두 파일 모두 같은 멀티사이즈 .ico 로 덮어쓰면 트레이는 작은 사이즈를 자동 picking.
 #   우선순위:
 #     1. overlay/icons/windows/{flavor}.ico (수제, 멀티 사이즈)
 #     2. ImageMagick 으로 overlay/icons/{flavor}/xxxhdpi.png → ICO 자동 변환
@@ -439,16 +445,19 @@ fi
 #     3. 둘 다 없으면 skip (RustDesk 기본 아이콘 잔존, 빌드는 안 깨짐)
 # ────────────────────────────────────────────────────────────
 TARGET_ICO="res/icon.ico"
+TARGET_TRAY_ICO="res/tray-icon.ico"
 PRECOOKED_ICO="overlay/icons/windows/${FLAVOR}.ico"
 SOURCE_PNG="overlay/icons/${FLAVOR}/xxxhdpi.png"
 
 if [ -f "$PRECOOKED_ICO" ]; then
-    echo "[14] $TARGET_ICO  ← $PRECOOKED_ICO (수제 멀티사이즈)"
+    echo "[14] $TARGET_ICO + $TARGET_TRAY_ICO  ← $PRECOOKED_ICO (수제 멀티사이즈)"
     cp "$PRECOOKED_ICO" "$TARGET_ICO"
+    cp "$PRECOOKED_ICO" "$TARGET_TRAY_ICO"
     PATCHED=$((PATCHED+1))
 elif command -v magick >/dev/null 2>&1 && [ -f "$SOURCE_PNG" ]; then
-    echo "[14] $TARGET_ICO  ← $SOURCE_PNG (ImageMagick 자동 변환)"
+    echo "[14] $TARGET_ICO + $TARGET_TRAY_ICO  ← $SOURCE_PNG (ImageMagick 자동 변환)"
     magick "$SOURCE_PNG" -define icon:auto-resize=256,128,96,64,48,32,16 "$TARGET_ICO"
+    cp "$TARGET_ICO" "$TARGET_TRAY_ICO"
     PATCHED=$((PATCHED+1))
 else
     echo "[14] Windows 아이콘 소스 없음 — RustDesk 기본 아이콘 잔존"
