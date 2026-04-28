@@ -72,4 +72,72 @@ class ApiClient {
           .timeout(_timeout);
     } catch (_) {}
   }
+
+  // ────────── viewer flavor 인증 ──────────
+
+  /// POST /viewer_login.php
+  /// 응답:
+  ///   { result: "ok",     token, expires_in, user: {...} }     → 성공
+  ///   { result: "conflict", existing: {device_label, last_active} } → 다른 기기 활성 (HTTP 409)
+  ///   { error: "..." }                                          → 실패 (401/403/500)
+  static Future<Map<String, dynamic>?> viewerLogin({
+    required String id,
+    required String pw,
+    required String deviceFingerprint,
+    required String deviceLabel,
+    bool forceTakeover = false,
+  }) async {
+    try {
+      final resp = await _client
+          .post(
+            Uri.parse('$API_BASE/viewer_login.php'),
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: jsonEncode({
+              'id': id,
+              'pw': pw,
+              'device_fingerprint': deviceFingerprint,
+              'device_label': deviceLabel,
+              'force_takeover': forceTakeover,
+            }),
+          )
+          .timeout(_timeout);
+      // 200 (ok), 409 (conflict), 401/403/500 (error) 모두 body 파싱 시도
+      final body = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+      body['_status'] = resp.statusCode;
+      return body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// GET /viewer_session.php (Bearer 토큰)
+  /// 200 → 유효, last_active 갱신됨
+  /// 401 → 만료 / 다른 기기 로그인으로 강제 로그아웃됨 / 토큰 invalid
+  static Future<Map<String, dynamic>?> viewerSession(String token) async {
+    try {
+      final resp = await _client
+          .get(
+            Uri.parse('$API_BASE/viewer_session.php'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(_timeout);
+      if (resp.statusCode == 200) {
+        return jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+      }
+      // 401 → 호출자가 로그아웃 처리해야 함 (null 반환)
+    } catch (_) {}
+    return null;
+  }
+
+  /// POST /viewer_logout.php (Bearer 토큰)
+  static Future<void> viewerLogout(String token) async {
+    try {
+      await _client
+          .post(
+            Uri.parse('$API_BASE/viewer_logout.php'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(_timeout);
+    } catch (_) {}
+  }
 }

@@ -86,6 +86,13 @@ jobs:
               vcpkg-triplet: x64-windows-static,
               flavor: viewer,
             }
+          - {
+              target: x86_64-pc-windows-msvc,
+              os: windows-2022,
+              arch: x86_64,
+              vcpkg-triplet: x64-windows-static,
+              flavor: support,
+            }
     steps:
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6
@@ -270,7 +277,8 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build msi
-        if: env.UPLOAD_ARTIFACT == 'true'
+        # support flavor 는 1회용 portable .exe 만 배포 (MSI 빌드 건너뜀)
+        if: env.UPLOAD_ARTIFACT == 'true' && matrix.job.flavor != 'support'
         run: |
           pushd ./res/msi
           python preprocess.py --arp -d ../../rustdesk
@@ -293,6 +301,7 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.msi
+            ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.exe
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
 # DISABLED:   build-for-windows-sciter:

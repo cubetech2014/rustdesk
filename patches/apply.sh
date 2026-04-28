@@ -11,13 +11,19 @@ echo "=== CubeRemote 통합 빌드 패치 시작 ==="
 RDV_SERVER="203.245.29.78"
 PUB_KEY="i3sWZx4sShCLVGZ3mPoZVbzeYfc7VK1pOy2XdrRhkt0="
 
-# === Flavor 분기 (CUBE_FLAVOR=agent|viewer, default agent) ===
+# === Flavor 분기 (CUBE_FLAVOR=agent|viewer|support, default agent) ===
 FLAVOR="${CUBE_FLAVOR:-agent}"
 case "$FLAVOR" in
     viewer)
         APP_NAME_NEW="CubeRemote Viewer"
         ANDROID_LABEL="CubeRemote 관리자"
         HARD_CONN_TYPE="outgoing"
+        ;;
+    support)
+        # 1회용 고객 지원 — 설치 X / 인증 X / heartbeat X / 등록 X
+        APP_NAME_NEW="CubeRemote Support"
+        ANDROID_LABEL="CubeRemote Support"
+        HARD_CONN_TYPE="incoming"
         ;;
     *)
         APP_NAME_NEW="CubeRemote"

@@ -1,35 +1,34 @@
-// CubeRemote 장비 정보 수집 (Flutter + RustDesk 런타임 활용)
+// CubeRemote 장비 정보 수집
+// 외부 _plus 패키지 의존성 최소화 (RustDesk transitive 의존성 충돌 방지)
+// 사용 패키지: device_info_plus, package_info_plus 만 (둘 다 RustDesk가 이미 사용)
 import 'dart:io';
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:network_info_plus/network_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 
 class DeviceInfoHelper {
-  static String? _deviceIdCache;
+  /// RustDesk가 발급한 9자리 ID. rustdesk:// 딥링크 / 원격 제어 식별자.
+  /// RustDesk 초기화 후에만 받을 수 있음. 못 받으면 null.
+  static Future<String?> getRustDeskId() async {
+    try {
+      final id = await bind.mainGetMyId();
+      if (id.isNotEmpty) return id;
+    } catch (_) {}
+    return null;
+  }
 
-  /// RustDesk ID를 device_id로 사용 (원격 제어 시 동일 식별자로 통일)
-  /// RustDesk 초기화 후에만 호출 가능
-  static Future<String> getDeviceId({String? rustDeskId}) async {
-    if (rustDeskId != null && rustDeskId.isNotEmpty) {
-      _deviceIdCache = rustDeskId;
-      return rustDeskId;
-    }
-    if (_deviceIdCache != null) return _deviceIdCache!;
-
-    // Fallback: ANDROID_ID / MAC 조합
+  /// 폴백 device id (디버그/표시용).
+  /// heartbeat 의 device_id 로는 사용 금지 — getRustDeskId() 만 사용.
+  static Future<String> getFallbackId() async {
     final info = DeviceInfoPlugin();
     if (Platform.isAndroid) {
       final a = await info.androidInfo;
-      _deviceIdCache = 'AND-${a.id}';
+      return 'AND-${a.id}';
     } else if (Platform.isWindows) {
       final w = await info.windowsInfo;
-      _deviceIdCache = 'WIN-${w.computerName}';
-    } else {
-      _deviceIdCache = 'UNK-${DateTime.now().millisecondsSinceEpoch}';
+      return 'WIN-${w.computerName}';
     }
-    return _deviceIdCache!;
+    return 'UNK-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   static Future<String> getDeviceName() async {
@@ -58,31 +57,34 @@ class DeviceInfoHelper {
     return Platform.operatingSystemVersion;
   }
 
-  static Future<int> getBatteryLevel() async {
-    if (Platform.isWindows) return -1;
-    try {
-      return await Battery().batteryLevel;
-    } catch (_) {
-      return -1;
-    }
-  }
+  /// 배터리 잔량 — 일단 -1 (추후 native channel 보강)
+  static Future<int> getBatteryLevel() async => -1;
 
+  /// 네트워크 타입 — 인터페이스 이름으로 추정
   static Future<String> getNetworkType() async {
-    final conn = await Connectivity().checkConnectivity();
-    if (conn.contains(ConnectivityResult.wifi)) return 'WiFi';
-    if (conn.contains(ConnectivityResult.mobile)) return 'LTE';
-    if (conn.contains(ConnectivityResult.ethernet)) return 'Ethernet';
-    return 'None';
+    try {
+      final list = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final iface in list) {
+        final n = iface.name.toLowerCase();
+        if (n.contains('wlan') || n.contains('wifi') || n.startsWith('wl')) return 'WiFi';
+        if (n.contains('rmnet') || n.contains('ccmni') || n.contains('lte')) return 'LTE';
+        if (n.contains('eth')) return 'Ethernet';
+      }
+    } catch (_) {}
+    return 'Unknown';
   }
 
+  /// 첫 번째 비-루프백 IPv4
   static Future<String> getIpAddress() async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        final info = NetworkInfo();
-        final wifi = await info.getWifiIP();
-        if (wifi != null && wifi.isNotEmpty) return wifi;
-      }
-      for (final iface in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
+      final list = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final iface in list) {
         for (final addr in iface.addresses) {
           if (!addr.isLoopback) return addr.address;
         }
@@ -100,5 +102,6 @@ class DeviceInfoHelper {
     }
   }
 
-  static String get platform => Platform.isAndroid ? 'Android' : (Platform.isWindows ? 'Windows' : 'Other');
+  static String get platform =>
+      Platform.isAndroid ? 'Android' : (Platform.isWindows ? 'Windows' : 'Other');
 }

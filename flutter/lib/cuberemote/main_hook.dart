@@ -1,5 +1,5 @@
 // RustDesk 포크의 main.dart 에서 CubeRemote 초기화 훅
-// 사용법: RustDesk main() / runMobileApp() 시작 시 호출
+// 사용법: RustDesk runMobileApp() / runMainApp() 시작 시 호출
 //   await CubeRemoteMainHook.onAppStart();
 //   runApp(CubeRemoteMainHook.wrapApp(App()));
 
@@ -10,32 +10,53 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'agent_service.dart';
 import 'config.dart';
 import 'registration_page.dart';
+import 'session_service.dart';
 import 'update_service.dart';
+import 'viewer_login_page.dart';
 
 class CubeRemoteMainHook {
   /// 앱 시작 시 호출.
   /// - 모든 flavor: 백그라운드 업데이트 체크
   /// - Agent flavor + 등록된 기기: heartbeat 시작
+  /// - Viewer flavor: 캐시 토큰 복원 (있으면 로그인 게이트 스킵)
+  /// - Support flavor: 아무 추가 동작 없음 (RustDesk default)
   static Future<void> onAppStart() async {
-    // viewer 도 새 버전 체크
     UpdateService.checkInBackground();
 
-    if (!isAgentFlavor) return;
-    final prefs = await SharedPreferences.getInstance();
-    final registered = (prefs.getString(PREF_SHOP_ID) ?? '').isNotEmpty;
-    if (registered) {
-      AgentService.start();
+    if (isAgentFlavor) {
+      final prefs = await SharedPreferences.getInstance();
+      final registered = (prefs.getString(PREF_SHOP_ID) ?? '').isNotEmpty;
+      if (registered) {
+        AgentService.start();
+      }
+      return;
     }
+
+    if (isViewerFlavor) {
+      // 토큰 복원만 (서버 검증은 wrapApp 의 _ViewerAuthGate 가 별도 수행)
+      await SessionService.restoreFromCache();
+      return;
+    }
+
+    // support flavor → no-op (RustDesk default 동작)
   }
 
   /// 앱 루트 위젯 래핑
-  /// - Agent flavor 첫 실행 → 등록 화면
-  /// - 등록된 Agent → _UpdateGate 가 새 버전 발견 시 다이얼로그 표시 후 child 진입
-  /// - Viewer flavor → child 그대로
+  /// - Agent flavor 첫 실행 → 매장 등록 화면
+  /// - Agent 등록됨 → _UpdateGate
+  /// - Viewer flavor → _ViewerAuthGate (로그인 + 60초 ping)
+  /// - Support flavor → child 그대로 (인증/등록 모두 없음)
   static Widget wrapApp(Widget child) {
-    // Viewer: 등록 화면 없음, 업데이트 게이트만
-    if (isViewerFlavor) return _UpdateGate(child: child);
+    if (isSupportFlavor) {
+      // 1회용 — 아무 추가 게이트 없이 RustDesk default UI
+      return child;
+    }
 
+    if (isViewerFlavor) {
+      return _ViewerAuthGate(child: child);
+    }
+
+    // Agent
     return FutureBuilder<_LaunchState>(
       future: _resolveLaunch(),
       builder: (context, snap) {
@@ -66,6 +87,80 @@ class CubeRemoteMainHook {
 }
 
 enum _LaunchState { firstRun, normal }
+
+/// Viewer 인증 게이트
+/// - 캐시 토큰 + 서버 검증 통과 시 child (실제 RustDesk UI) 진입
+/// - 그 외 ViewerLoginPage 표시
+/// - child 진입 시 60초 ping timer 자동 시작
+class _ViewerAuthGate extends StatefulWidget {
+  final Widget child;
+  const _ViewerAuthGate({required this.child});
+  @override
+  State<_ViewerAuthGate> createState() => _ViewerAuthGateState();
+}
+
+class _ViewerAuthGateState extends State<_ViewerAuthGate> {
+  bool _checking = true;
+  bool _authenticated = false;
+  String? _flashMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    // restoreFromCache 는 onAppStart 에서 이미 시도됨 — 여기선 서버 검증만
+    if (SessionService.isLoggedIn) {
+      final ok = await SessionService.validateWithServer();
+      if (!mounted) return;
+      if (ok) {
+        setState(() { _authenticated = true; _checking = false; });
+        _startPing();
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() { _authenticated = false; _checking = false; });
+  }
+
+  void _onLoginSuccess() {
+    setState(() { _authenticated = true; _flashMessage = null; });
+    _startPing();
+  }
+
+  void _startPing() {
+    SessionService.startPingTimer(onForcedLogout: (reason) {
+      if (!mounted) return;
+      SessionService.stopPingTimer();
+      setState(() {
+        _authenticated = false;
+        _flashMessage = reason;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B1220),
+          body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        ),
+      );
+    }
+    if (!_authenticated) {
+      return ViewerLoginPage(
+        onSuccess: _onLoginSuccess,
+        initialMessage: _flashMessage,
+      );
+    }
+    return _UpdateGate(child: widget.child);
+  }
+}
 
 /// 앱 진입 직후 1회 — 새 버전 있으면 다이얼로그.
 /// 다이얼로그 표시는 Material context 안에서 한 번만 (이전 표시 버전을 SharedPreferences 에 기록).
