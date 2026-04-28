@@ -134,6 +134,7 @@ Future<void> initEnv(String appType) async {
 }
 
 void runMainApp(bool startService) async {
+  await CubeRemoteMainHook.onAppStart();
   // register uni links
   await initEnv(kAppTypeMain);
   checkUpdate();

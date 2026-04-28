@@ -212,13 +212,23 @@ if [ -f "$MAIN_DART" ]; then
         echo "[9/9] $MAIN_DART  (skip — 훅 이미 주입됨)"
         SKIPPED=$((SKIPPED+1))
     else
-        echo "[9/9] $MAIN_DART  훅 주입"
+        echo "[9/9] $MAIN_DART  훅 주입 (mobile + desktop 양쪽)"
         # 1) import 추가 (common.dart import 다음 줄에)
         sed -i "/^import 'common.dart';/a import 'cuberemote/main_hook.dart';" "$MAIN_DART"
-        # 2) runMobileApp() 시작 부분에 hook 호출
+        # 2) runMobileApp() 시작 부분에 hook 호출 (Android 진입점)
         sed -i "s|^void runMobileApp() async {|void runMobileApp() async {\n  await CubeRemoteMainHook.onAppStart();|" "$MAIN_DART"
         # 3) runApp(App()) → wrapApp 으로 감싸기 (등록 화면 표시)
+        #    runMobileApp + runMainApp 양쪽에 같은 라인 → 한 sed 로 둘 다 처리됨
         sed -i "s|runApp(App());|runApp(CubeRemoteMainHook.wrapApp(App()));|" "$MAIN_DART"
+        # 4) runMainApp() (Windows/Desktop 진입점) 에도 hook 호출
+        #    isDesktop==true 일 때 Windows 는 runMobileApp 안 거치므로 별도 주입 필요.
+        #    함수 시작 부분 매칭 — initEnv 패턴은 runMobileApp / runInstallPage 도
+        #    똑같은 호출이라 매칭이 너무 광범위함 (3곳에 중복 주입됨).
+        #    함수 첫 라인 매칭이 unique + 일관 (mobile 도 같은 패턴).
+        #    (v1.0.18 까지 Windows agent heartbeat 안 도는 원인 — registration 후
+        #     첫 세션은 registration_page 가 직접 AgentService.start 호출해서 동작했지만
+        #     앱 재시작 후엔 onAppStart 미호출로 timer 시작 안 됨)
+        sed -i "s|^void runMainApp(bool startService) async {|void runMainApp(bool startService) async {\n  await CubeRemoteMainHook.onAppStart();|" "$MAIN_DART"
         PATCHED=$((PATCHED+1))
     fi
 fi
