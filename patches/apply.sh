@@ -328,18 +328,28 @@ fi
 #   --app-name / --manufacturer 인자를 안 넘겨 default 값("RustDesk"/"PURSLANE")이
 #   그대로 Includes.wxi → Strings.wxl 까지 박힘.
 #   default 값 자체를 sed 로 교체하면 워크플로우 호출 변경 없이 적용됨.
+#
+#   주의: app_name 만 바꾸면 init_global_vars()가 "{app_name}.exe" 파일을 디스크에서
+#   찾으려고 하는데, cargo 가 만드는 binary 는 항상 "rustdesk.exe" 임 (case-insensitive
+#   match 가 RustDesk → rustdesk 는 통과하지만 CubeRemote → rustdesk 는 실패).
+#   → init_global_vars() + gen_auto_component() 의 binary 이름 lookup 두 곳을
+#   "rustdesk.exe" 로 하드코딩해야 함. (v1.0.14 빌드 실패 분석 후 추가)
+#
 #   (EXE winres 는 [4/9] Cargo.toml 에서 별도 처리, 여기는 MSI 래퍼만)
 # ────────────────────────────────────────────────────────────
 PREPROCESS_PY="res/msi/preprocess.py"
 if [ -f "$PREPROCESS_PY" ]; then
-    if grep -q "default=\"$APP_NAME_NEW\"" "$PREPROCESS_PY"; then
-        echo "[13] $PREPROCESS_PY  (skip — 이미 $APP_NAME_NEW)"
+    if grep -q "default=\"$APP_NAME_NEW\"" "$PREPROCESS_PY" \
+       && grep -q "joinpath(\"rustdesk.exe\")" "$PREPROCESS_PY"; then
+        echo "[13] $PREPROCESS_PY  (skip — 이미 $APP_NAME_NEW + binary 하드코딩)"
         SKIPPED=$((SKIPPED+1))
     else
-        echo "[13] $PREPROCESS_PY  MSI installer 브랜딩 (app-name=$APP_NAME_NEW, manufacturer=CubeTech)"
+        echo "[13] $PREPROCESS_PY  MSI installer 브랜딩 (app-name=$APP_NAME_NEW, manufacturer=CubeTech, binary=rustdesk.exe 하드코딩)"
         sed -i \
             -e "s|default=\"RustDesk\"|default=\"$APP_NAME_NEW\"|" \
             -e "s|default=\"PURSLANE\"|default=\"CubeTech\"|" \
+            -e 's|dist_app = dist_dir.joinpath(app_name + "\.exe")|dist_app = dist_dir.joinpath("rustdesk.exe")|' \
+            -e 's|if file_path.name.lower() == f"{app_name}\.exe"\.lower():|if file_path.name.lower() == "rustdesk.exe":|' \
             "$PREPROCESS_PY"
         PATCHED=$((PATCHED+1))
     fi
