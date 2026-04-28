@@ -139,7 +139,7 @@ class _UpdateTileWidgetState extends State<_UpdateTileWidget> {
       context: ctx,
       barrierDismissible: !info.force,
       builder: (d) => AlertDialog(
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
         contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         title: Row(
           children: [
@@ -155,21 +155,52 @@ class _UpdateTileWidgetState extends State<_UpdateTileWidget> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(info.version, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            const Text('업데이트 가능', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 320, maxWidth: 360, maxHeight: 320),
+          constraints: const BoxConstraints(minWidth: 300, maxWidth: 360, maxHeight: 360),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                '새 버전이 출시되었습니다.',
-                style: TextStyle(fontSize: 13, color: Color(0xFF334155)),
+              // 버전 비교
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('현재', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(AGENT_VERSION, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF94A3B8))),
+                        ],
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.arrow_forward, size: 16, color: Color(0xFFE53935)),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('새 버전', style: TextStyle(fontSize: 10, color: Color(0xFFE53935), fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(info.version, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFE53935))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 14),
-              Container(height: 1, color: const Color(0xFFE5E7EB)),
               const SizedBox(height: 12),
               const Text(
                 '업데이트 내역',
@@ -180,7 +211,7 @@ class _UpdateTileWidgetState extends State<_UpdateTileWidget> {
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: const Color(0xFFE5E7EB)),
                   ),

@@ -41,16 +41,8 @@ class CubeRemoteMainHook {
       return;
     }
 
-    if (isSupportFlavor) {
-      // 1회용 — 매 실행 시 8자리 숫자 임시 비번 + 비번 인증 모드 강제
-      try {
-        await bind.mainSetOption(key: 'verification-method', value: 'use-temporary-password');
-        await bind.mainSetOption(key: 'approve-mode', value: 'password');
-        await bind.mainSetOption(key: 'temporary-password-length', value: '8');
-        await bind.mainSetOption(key: 'allow-numeric-one-time-password', value: 'Y');
-      } catch (_) {}
-      return;
-    }
+    // support 옵션 설정은 _UpdateGate 의 postFrameCallback 에서 처리
+    // (onAppStart 는 initEnv 전이라 mainSetOption 이 silent fail)
   }
 
   /// 앱 루트 위젯 래핑
@@ -59,8 +51,8 @@ class CubeRemoteMainHook {
   ///   _UpdateGate 가 viewer 일 때 추가로 인증 route 처리.
   static Widget wrapApp(Widget child) {
     if (isSupportFlavor) {
-      // 1회용 — 인증/등록 모두 없음
-      return child;
+      // 1회용 — 인증/등록 없음. _UpdateGate 의 postFrameCallback 이 비번 옵션 설정 (initEnv 후 시점이라 정상 동작)
+      return _UpdateGate(child: child);
     }
 
     if (isViewerFlavor) {
@@ -113,18 +105,30 @@ class _UpdateGate extends StatefulWidget {
 }
 
 class _UpdateGateState extends State<_UpdateGate> {
-  static const _shownKey = 'cuberemote_update_shown_version';
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (isSupportFlavor) {
+        await _initSupport();
+      }
       if (isViewerFlavor) {
         await _ensureAuth();
       }
       // 인증 후 (또는 viewer 가 아니면 곧장) 업데이트 모달 체크
       _maybePrompt();
     });
+  }
+
+  /// support flavor 1회용 임시 비번 옵션 설정
+  /// onAppStart 가 아닌 여기서 호출 — initEnv 완료 후 시점이라 mainSetOption 정상 적용
+  Future<void> _initSupport() async {
+    try {
+      await bind.mainSetOption(key: 'verification-method', value: 'use-temporary-password');
+      await bind.mainSetOption(key: 'approve-mode', value: 'password');
+      await bind.mainSetOption(key: 'temporary-password-length', value: '8');
+      await bind.mainSetOption(key: 'allow-numeric-one-time-password', value: 'Y');
+    } catch (_) {}
   }
 
   /// viewer 인증 게이트 — 미인증이면 ViewerLoginPage 로 route 전환
@@ -160,12 +164,13 @@ class _UpdateGateState extends State<_UpdateGate> {
             SessionService.stopPingTimer();
             await _gotoLogin(reason: r);
           });
-          Get.back();  // login route 닫고 _UpdateGate (App) 으로 복귀
+          Get.back();  // login route 닫고 App() initial route 로 복귀
         },
         initialMessage: reason,
       ),
-      // 다른 어떤 route 도 못 빠져나가게 (predicate false → 모든 이전 route 제거)
-      predicate: (_) => false,
+      // initial route (App() 의 home) 는 보존 → 로그인 후 Get.back 으로 복귀 가능
+      // 이전엔 (_) => false 라 모든 route 제거 → 로그인 후 갈 곳 없어 멈춤
+      predicate: (route) => route.isFirst,
       transition: Transition.fadeIn,
       duration: const Duration(milliseconds: 200),
     );
@@ -175,13 +180,12 @@ class _UpdateGateState extends State<_UpdateGate> {
     try {
       final info = await UpdateService.checkNow().timeout(const Duration(seconds: 8));
       if (info == null || !mounted) return;
-      final prefs = await SharedPreferences.getInstance();
-      final shown = prefs.getString(_shownKey) ?? '';
-      if (shown == info.version && !info.force) return;
+      // shownKey 검사 제거 — "나중에" 눌러도 매 실행 시 다시 모달 표시
+      // (운영 정책: 업데이트는 매장 안전상 빨리 보급되는 게 더 중요)
 
       final go = await Get.dialog<bool>(
         AlertDialog(
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
           contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
           actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
           title: Row(
@@ -203,25 +207,74 @@ class _UpdateGateState extends State<_UpdateGate> {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                info.version,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              const Text(
+                '업데이트 가능',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
             ],
           ),
           content: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 480, maxWidth: 480, maxHeight: 380),
+            constraints: const BoxConstraints(minWidth: 480, maxWidth: 480, maxHeight: 420),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  '새 버전이 출시되었습니다. 지금 업데이트하시겠습니까?',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF334155)),
+                // 버전 비교 박스
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('현재 버전',
+                                style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                            const SizedBox(height: 4),
+                            Text(
+                              AGENT_VERSION,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF94A3B8),
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Icon(Icons.arrow_forward, size: 20, color: Color(0xFFE53935)),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('새 버전',
+                                style: TextStyle(fontSize: 11, color: Color(0xFFE53935), fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                            const SizedBox(height: 4),
+                            Text(
+                              info.version,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFE53935),
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
-                Container(height: 1, color: const Color(0xFFE5E7EB)),
-                const SizedBox(height: 14),
                 const Text(
                   '업데이트 내역',
                   style: TextStyle(
@@ -236,7 +289,7 @@ class _UpdateGateState extends State<_UpdateGate> {
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
@@ -273,10 +326,6 @@ class _UpdateGateState extends State<_UpdateGate> {
         ),
         barrierDismissible: !info.force,
       );
-      // 사용자가 명시적으로 답한 경우만 마킹 (silently fail 시 다음 시작 시 재시도)
-      if (go != null) {
-        await prefs.setString(_shownKey, info.version);
-      }
       if (go == true) {
         await UpdateService.downloadAndInstallGlobal(info);
       }
