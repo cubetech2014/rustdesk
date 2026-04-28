@@ -356,6 +356,30 @@ if [ -f "$PREPROCESS_PY" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [13b] res/msi/Package/Components/RustDesk.wxs — App.exe File 의 Source 명시
+#   부모 DirectoryRef 의 FileSource="$(var.BuildDir)" + Name="$(var.Product).exe"
+#   조합으로 build-time 에 "BuildDir/CubeRemote Viewer.exe" 를 찾으려 함 → 실패
+#   (실제 binary 는 항상 rustdesk.exe).
+#   <File> 에 Source="$(var.BuildDir)\rustdesk.exe" 를 명시하면:
+#     - build time: rustdesk.exe 를 source 로 잡음 ✓
+#     - install time: Name="$(var.Product).exe" 로 install 폴더에 배치 ✓
+#       → 서비스 등록 / 방화벽 / 단축키 모두 $(var.Product).exe 로 정상 동작
+#   (v1.0.15 빌드 실패 분석 후 추가)
+# ────────────────────────────────────────────────────────────
+RUSTDESK_WXS="res/msi/Package/Components/RustDesk.wxs"
+if [ -f "$RUSTDESK_WXS" ]; then
+    if grep -q 'Source="\$(var.BuildDir)/rustdesk.exe"' "$RUSTDESK_WXS"; then
+        echo "[13b] $RUSTDESK_WXS  (skip — Source 이미 명시됨)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[13b] $RUSTDESK_WXS  App.exe Source 를 rustdesk.exe 로 명시"
+        # forward slash 사용 (WiX 가 Windows 에서도 OK, sed 의 \r 이스케이프 문제 회피)
+        sed -i 's|<File Id="App.exe" Name="$(var.Product).exe" KeyPath|<File Id="App.exe" Name="$(var.Product).exe" Source="$(var.BuildDir)/rustdesk.exe" KeyPath|' "$RUSTDESK_WXS"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # [14] Windows EXE/MSI 아이콘 — res/icon.ico 덮어쓰기
 #   Cargo.toml winres + res/msi/preprocess.py 가 모두 res/icon.ico 사용
 #   → 한 파일 덮어쓰면 EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키 모두 적용
