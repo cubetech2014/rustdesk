@@ -128,14 +128,10 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'CubeRemote',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE53935)),
-      ),
-      home: Scaffold(
+    // v1.0.24 fix: 부모 GetMaterialApp (RustDesk App()) 의 route 로 진입.
+    // 자체 MaterialApp 으로 감싸지 않음 — wrapApp 의 widget tree 분기가
+    // RustDesk windowManager / GetX / 기타 plugin 초기화와 충돌해서 빈 창 발생했음.
+    return Scaffold(
         backgroundColor: const Color(0xFF0B1220),
         body: Stack(
           children: [
@@ -301,8 +297,7 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _label(String t) => Text(

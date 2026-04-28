@@ -452,18 +452,30 @@ fi
 # ────────────────────────────────────────────────────────────
 TARGET_ICO="res/icon.ico"
 TARGET_TRAY_ICO="res/tray-icon.ico"
+TARGET_FLUTTER_ICO="flutter/windows/runner/resources/app_icon.ico"
 PRECOOKED_ICO="overlay/icons/windows/${FLAVOR}.ico"
 SOURCE_PNG="overlay/icons/${FLAVOR}/xxxhdpi.png"
 
+# 세 위치 모두 같은 .ico 로 통일:
+#   res/icon.ico              → EXE winres + MSI 설치 마법사 + 제어판 ARP + 단축키
+#   res/tray-icon.ico         → src/tray.rs include_bytes (시스템 트레이)
+#   flutter/.../app_icon.ico  → Flutter Windows runner (Runner.rc)
+#                               → 앱 좌상단 titlebar 아이콘 + 실행 중 작업 표시줄
 if [ -f "$PRECOOKED_ICO" ]; then
-    echo "[14] $TARGET_ICO + $TARGET_TRAY_ICO  ← $PRECOOKED_ICO (수제 멀티사이즈)"
+    echo "[14] icon.ico + tray-icon.ico + app_icon.ico  ← $PRECOOKED_ICO (수제 멀티사이즈)"
     cp "$PRECOOKED_ICO" "$TARGET_ICO"
     cp "$PRECOOKED_ICO" "$TARGET_TRAY_ICO"
+    if [ -f "$TARGET_FLUTTER_ICO" ]; then
+        cp "$PRECOOKED_ICO" "$TARGET_FLUTTER_ICO"
+    fi
     PATCHED=$((PATCHED+1))
 elif command -v magick >/dev/null 2>&1 && [ -f "$SOURCE_PNG" ]; then
-    echo "[14] $TARGET_ICO + $TARGET_TRAY_ICO  ← $SOURCE_PNG (ImageMagick 자동 변환)"
+    echo "[14] icon.ico + tray-icon.ico + app_icon.ico  ← $SOURCE_PNG (ImageMagick 자동 변환)"
     magick "$SOURCE_PNG" -define icon:auto-resize=256,128,96,64,48,32,16 "$TARGET_ICO"
     cp "$TARGET_ICO" "$TARGET_TRAY_ICO"
+    if [ -f "$TARGET_FLUTTER_ICO" ]; then
+        cp "$TARGET_ICO" "$TARGET_FLUTTER_ICO"
+    fi
     PATCHED=$((PATCHED+1))
 else
     echo "[14] Windows 아이콘 소스 없음 — RustDesk 기본 아이콘 잔존"
@@ -521,12 +533,15 @@ if [ -f "$DESKTOP_SETTINGS" ]; then
         sed -i "1i // CubeRemote: desktop sections cleaned" "$DESKTOP_SETTINGS"
         # 15c: Account 섹션 (탭/패널 진입 모두) 항상 hide
         sed -i 's|!bind.isDisableAccount()|false|g' "$DESKTOP_SETTINGS"
-        # 15d: About 섹션 Website 링크 → cube-tech.co.kr (privacy.html 은 이후 [15e] 가 통째로 제거하므로 영향 없음)
-        sed -i "s|launchUrlString('https://rustdesk.com');|launchUrlString('https://cube-tech.co.kr');|" "$DESKTOP_SETTINGS"
+        # 15d: About 섹션 Website 링크 → www.cube-tech.co.kr (privacy.html 은 이후 [15e] 가 통째로 제거하므로 영향 없음)
+        sed -i "s|launchUrlString('https://rustdesk.com');|launchUrlString('https://www.cube-tech.co.kr');|" "$DESKTOP_SETTINGS"
         # 15e: Privacy Statement InkWell 블록 통째 제거 (perl multiline non-greedy)
         perl -i -0pe 's|\s+InkWell\(\s+onTap: \(\) \{\s+launchUrlString\(.https://rustdesk\.com/privacy\.html.\);\s+\},\s+child: Text\(\s+translate\(.Privacy Statement.\),\s+style: linkStyle,\s+\)\.marginSymmetric\(vertical: 4\.0\)\),||s' "$DESKTOP_SETTINGS"
         # 15f: General → Auto update (RustDesk 자체 업데이트, rustdesk.com 가리킴 — 우리는 자체 자동업데이트 사용)
         sed -i 's|if (showAutoUpdate)|if (false) // CubeRemote: auto update hidden (use our UpdateService)|' "$DESKTOP_SETTINGS"
+        # 15g: 프린터 사이드바 탭 hide (POS 운영 무관)
+        # 조건 `(isWindows && bind.mainGetBuildinOption(...) != 'Y')` 의 두 번째 항을 false 로 강제 → 탭 항상 hide
+        sed -i "s|bind.mainGetBuildinOption(key: kOptionHideRemotePrinterSetting) != 'Y'|false /* CubeRemote: printer tab hidden */|" "$DESKTOP_SETTINGS"
         PATCHED=$((PATCHED+1))
     fi
 fi
