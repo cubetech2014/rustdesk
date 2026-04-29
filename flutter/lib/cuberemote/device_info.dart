@@ -31,30 +31,42 @@ class DeviceInfoHelper {
     return 'UNK-${DateTime.now().millisecondsSinceEpoch}';
   }
 
+  /// device_info_plus 의 windowsInfo / androidInfo 호출은 WMI/COM/JNI 의존이라
+  /// 일시적 권한 문제나 timing 으로 throw 가능. heartbeat map 구성 도중 throw 시
+  /// _sendOnce 의 outer try-catch 가 swallow 해서 sendHeartbeat 가 영영 호출 안 됨.
+  /// → 모든 device_info 호출은 반드시 try-catch + 폴백 (실패해도 heartbeat 자체는 진행).
   static Future<String> getDeviceName() async {
-    final info = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
-      final a = await info.androidInfo;
-      return '${a.manufacturer} ${a.model}';
+    try {
+      final info = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final a = await info.androidInfo;
+        return '${a.manufacturer} ${a.model}';
+      }
+      if (Platform.isWindows) {
+        final w = await info.windowsInfo;
+        return w.computerName;
+      }
+      return Platform.operatingSystem;
+    } catch (_) {
+      return Platform.operatingSystem;
     }
-    if (Platform.isWindows) {
-      final w = await info.windowsInfo;
-      return w.computerName;
-    }
-    return Platform.operatingSystem;
   }
 
   static Future<String> getOsVersion() async {
-    final info = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
-      final a = await info.androidInfo;
-      return 'Android ${a.version.release} (API ${a.version.sdkInt})';
+    try {
+      final info = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final a = await info.androidInfo;
+        return 'Android ${a.version.release} (API ${a.version.sdkInt})';
+      }
+      if (Platform.isWindows) {
+        final w = await info.windowsInfo;
+        return 'Windows ${w.productName}';
+      }
+      return Platform.operatingSystemVersion;
+    } catch (_) {
+      return Platform.operatingSystemVersion;
     }
-    if (Platform.isWindows) {
-      final w = await info.windowsInfo;
-      return 'Windows ${w.productName}';
-    }
-    return Platform.operatingSystemVersion;
   }
 
   /// 배터리 잔량 — 일단 -1 (추후 native channel 보강)
