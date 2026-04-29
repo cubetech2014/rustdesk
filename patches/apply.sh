@@ -314,6 +314,22 @@ if [ -f "$MANIFEST" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [11d] AndroidManifest.xml — REQUEST_INSTALL_PACKAGES 권한 (Android 8.0+ APK 설치 필수)
+#   v1.0.29 추가: 권한 누락 → ACTION_VIEW intent 가 silent block → 모바일 viewer
+#   다운로드 100% 후 PackageInstaller 다이얼로그 안 뜸 (멈춘 듯한 UX).
+#   <uses-permission> 은 manifest 루트의 자식, package="..." 다음 줄에 삽입.
+# ────────────────────────────────────────────────────────────
+if [ -f "$MANIFEST" ]; then
+    if grep -q 'REQUEST_INSTALL_PACKAGES' "$MANIFEST"; then
+        echo "[11d] $MANIFEST  (skip — REQUEST_INSTALL_PACKAGES 이미)"
+    else
+        echo "[11d] $MANIFEST  REQUEST_INSTALL_PACKAGES 권한 주입"
+        # 첫 <uses-permission> 줄 앞에 추가
+        sed -i '0,/<uses-permission/{s|<uses-permission|<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <uses-permission|}' "$MANIFEST"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # [12] settings_page.dart — 운영 무관 RustDesk 항목 hide
 #   - Account 섹션 (RustDesk 클라우드 로그인)
 #   - About 섹션 (Version+rustdesk.com, Privacy Statement, Build Date, Fingerprint)
@@ -602,6 +618,8 @@ check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
 check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
+check "Android installer 등록" "$MAIN_ACTIVITY" "CubeRemoteInstaller.register"
+check "Android 설치 권한"  "$MANIFEST" "REQUEST_INSTALL_PACKAGES"
 
 if [ "$FAIL" = "1" ]; then
     echo ""
