@@ -499,6 +499,30 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────
+# [14b] Flutter 좌상단 titlebar 아이콘 — flutter/assets/icon.png 교체
+#   v1.0.30 추가: hidden_titlebar 모드라 좌상단 16×16 아이콘은 OS 가 아니라
+#   Flutter 의 loadIcon(16) -> Image.asset('assets/icon.png') 가 그림.
+#   icon.png 가 없으면 SvgPicture.asset('assets/icon.svg') (RustDesk 다이아몬드)
+#   가 fallback 으로 표시됨. → PNG 를 우리 로고로 교체하면 SVG fallback 미발동.
+#
+#   소스: overlay/icons/{flavor}/xxxhdpi.png (192×192, agent/viewer/support 별)
+#   대상: flutter/assets/icon.png
+# ────────────────────────────────────────────────────────────
+FLUTTER_ASSET_ICON="flutter/assets/icon.png"
+if [ -f "$SOURCE_PNG" ]; then
+    echo "[14b] $FLUTTER_ASSET_ICON  ← $SOURCE_PNG (좌상단 titlebar 아이콘)"
+    cp "$SOURCE_PNG" "$FLUTTER_ASSET_ICON"
+    PATCHED=$((PATCHED+1))
+elif command -v magick >/dev/null 2>&1 && [ -f "$PRECOOKED_ICO" ]; then
+    # support 처럼 PNG 안 만든 flavor — .ico 의 첫 layer 를 PNG 로 추출
+    echo "[14b] $FLUTTER_ASSET_ICON  ← $PRECOOKED_ICO (ImageMagick 으로 ICO→PNG 추출)"
+    magick "$PRECOOKED_ICO[0]" -resize 192x192 "$FLUTTER_ASSET_ICON"
+    PATCHED=$((PATCHED+1))
+else
+    echo "[14b] PNG 소스 없음 — 좌상단 RustDesk SVG fallback 잔존"
+fi
+
+# ────────────────────────────────────────────────────────────
 # [15] Desktop UI 정리 (PC viewer + Windows POS 양쪽)
 #   사용자 요청 (2026-04-28):
 #     a. 좌상단 "CubeRemote 제공" 링크 → remote.cube-tech.co.kr
@@ -620,6 +644,10 @@ check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
 check "Android installer 등록" "$MAIN_ACTIVITY" "CubeRemoteInstaller.register"
 check "Android 설치 권한"  "$MANIFEST" "REQUEST_INSTALL_PACKAGES"
+# titlebar 아이콘 검증은 sed/grep 으로 안 되니 파일 존재만 체크
+if [ ! -f "$FLUTTER_ASSET_ICON" ]; then
+    echo "  ✗ Flutter titlebar 아이콘  ($FLUTTER_ASSET_ICON 없음 — RustDesk SVG fallback)"
+fi
 
 if [ "$FAIL" = "1" ]; then
     echo ""

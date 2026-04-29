@@ -26,9 +26,12 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
   @override
   void initState() {
     super.initState();
-    UpdateService.getPending().then((info) {
-      if (mounted) setState(() => _pending = info);
-    });
+    // v1.0.29: support flavor 는 1회용 portable — 업데이트 의미 없음. pending 조회 skip.
+    if (!isSupportFlavor) {
+      UpdateService.getPending().then((info) {
+        if (mounted) setState(() => _pending = info);
+      });
+    }
   }
 
   Future<void> _onCheckUpdate() async {
@@ -122,15 +125,16 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
             ),
           ],
           const SizedBox(height: 10),
-          // 업데이트 버튼
-          _SidebarButton(
-            icon: hasUpdate ? Icons.system_update : Icons.refresh,
-            label: hasUpdate ? '업데이트 가능 (${_pending!.version})' : '업데이트 확인',
-            color: hasUpdate ? const Color(0xFFE53935) : null,
-            badge: hasUpdate,
-            loading: _checking,
-            onTap: _checking ? null : _onCheckUpdate,
-          ),
+          // 업데이트 버튼 — support flavor 는 1회용 portable 이라 노출 X
+          if (!isSupportFlavor)
+            _SidebarButton(
+              icon: hasUpdate ? Icons.system_update : Icons.refresh,
+              label: hasUpdate ? '업데이트 가능 (${_pending!.version})' : '업데이트 확인',
+              color: hasUpdate ? const Color(0xFFE53935) : null,
+              badge: hasUpdate,
+              loading: _checking,
+              onTap: _checking ? null : _onCheckUpdate,
+            ),
           if (isViewerFlavor) ...[
             const SizedBox(height: 6),
             _SidebarButton(
