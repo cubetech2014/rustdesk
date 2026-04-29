@@ -588,6 +588,13 @@ pub async fn start_server(is_server: bool, no_server: bool) {
 
     if is_server {
         crate::common::set_server_running(true);
+        // CubeRemote v1.0.30: heartbeat 를 service process 에서 실행.
+        //   기존 Flutter window 의 Timer 는 user 가 window 닫으면 죽어서 heartbeat 끊김.
+        //   service 는 SYSTEM 권한 + Windows 자동 재시작 정책 적용 가능 → heartbeat 안정.
+        //   agent.json 없거나 shop_id 비었으면 send_one 이 silent skip → viewer/support
+        //   flavor 빌드에서도 동작 안전 (network 호출 자체 안 함).
+        #[cfg(target_os = "windows")]
+        tokio::spawn(crate::cuberemote_heartbeat::run());
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {
                 log::error!("Failed to start ipc: {}", err);

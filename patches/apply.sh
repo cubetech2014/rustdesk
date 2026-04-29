@@ -644,6 +644,10 @@ check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
 check "Android installer 등록" "$MAIN_ACTIVITY" "CubeRemoteInstaller.register"
 check "Android 설치 권한"  "$MANIFEST" "REQUEST_INSTALL_PACKAGES"
+# v1.0.30: Rust service heartbeat 모듈 + lib.rs 등록 + server.rs spawn
+check "Rust heartbeat module"   "src/cuberemote_heartbeat.rs" "pub async fn run"
+check "Rust heartbeat lib.rs"   "src/lib.rs" "pub mod cuberemote_heartbeat"
+check "Rust heartbeat spawn"    "src/server.rs" "cuberemote_heartbeat::run"
 # titlebar 아이콘 검증은 sed/grep 으로 안 되니 파일 존재만 체크
 if [ ! -f "$FLUTTER_ASSET_ICON" ]; then
     echo "  ✗ Flutter titlebar 아이콘  ($FLUTTER_ASSET_ICON 없음 — RustDesk SVG fallback)"

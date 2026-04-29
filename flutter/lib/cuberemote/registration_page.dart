@@ -1,5 +1,7 @@
 // CubeRemote 에이전트 등록 화면 (최초 실행 시 1회)
 // Skip 시 RustDesk 뷰어 모드로만 동작
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'agent_service.dart';
@@ -53,6 +55,21 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
       await prefs.setString(PREF_SHOP_NM, result['shop_nm']?.toString() ?? shopNm);
       await prefs.setString(PREF_DEVICE_NM, deviceNm);
       await prefs.setBool('cuberemote_skipped', false);
+
+      // v1.0.30: Rust service heartbeat 가 즉시 사용할 수 있게 ProgramData 에 mirror.
+      //   AgentService._sendOnce 도 mirror 하지만 RustDesk ID 발급 전엔 skip 되어
+      //   첫 heartbeat 가 늦어짐 → 등록 직후 보장 위해 여기서 한 번 기록.
+      //   비번은 _initOnce 가 채워주니까 이 시점엔 빈값 OK (Rust 도 비번 빈값이면
+      //   skip — DB 비번 갱신은 첫 _sendOnce 때 함).
+      if (Platform.isWindows) {
+        await _writeAgentJson(
+          shopId: shopId,
+          pId: result['p_id']?.toString() ?? '',
+          hId: _hId.text.trim(),
+          shopNm: result['shop_nm']?.toString() ?? shopNm,
+          deviceNm: deviceNm,
+        );
+      }
 
       await AgentService.start();
       widget.onDone();
@@ -128,5 +145,36 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
   void dispose() {
     _shopId.dispose(); _shopNm.dispose(); _hId.dispose(); _deviceNm.dispose();
     super.dispose();
+  }
+
+  /// 등록 직후 ProgramData/CubeRemote/agent.json 에 즉시 mirror.
+  /// rustdesk_password 는 비워둠 — _initOnce 가 채운 후 _sendOnce 가 update 함.
+  Future<void> _writeAgentJson({
+    required String shopId,
+    required String pId,
+    required String hId,
+    required String shopNm,
+    required String deviceNm,
+  }) async {
+    try {
+      final programData = Platform.environment['PROGRAMDATA'] ?? r'C:\ProgramData';
+      final dir = Directory('$programData\\CubeRemote');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final file = File('${dir.path}\\agent.json');
+      final json = jsonEncode({
+        'shop_id': shopId,
+        'p_id': pId,
+        'h_id': hId,
+        'shop_nm': shopNm,
+        'device_nm': deviceNm,
+        'rustdesk_password': '',
+        'agent_version': AGENT_VERSION,
+      });
+      await file.writeAsString(json);
+    } catch (_) {
+      // 실패해도 Flutter heartbeat 는 정상 진행 — service heartbeat 만 1회 늦어짐
+    }
   }
 }

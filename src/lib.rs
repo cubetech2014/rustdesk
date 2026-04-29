@@ -30,6 +30,9 @@ pub mod ipc;
 pub mod ui;
 mod version;
 pub use version::*;
+// CubeRemote: agent heartbeat (Windows service 에서 동작 — Flutter window 와 무관)
+#[cfg(target_os = "windows")]
+pub mod cuberemote_heartbeat;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 mod bridge_generated;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]

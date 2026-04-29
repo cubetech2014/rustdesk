@@ -1,6 +1,15 @@
 // CubeRemote Heartbeat 서비스 (60초 주기)
 // + 첫 실행 시 RustDesk 영구 비밀번호 자동 발급, 플로팅 창/인증 모드 강제
+//
+// v1.0.30: Rust service heartbeat (cuberemote_heartbeat.rs) 와 redundancy 구조.
+//   - Flutter window 가 살아있는 동안엔 양쪽 모두 동작 (이중 송신, 부하 무관 수준)
+//   - Flutter window 가 죽으면 Rust service 가 단독으로 송신 (service 는 user 가 못 죽임)
+//   - Flutter 가 등록 / 비번 생성 / 옵션 강제 같은 user 컨텍스트 작업 담당
+//   - Rust 가 24/7 안정 송신 담당
+//   - 양쪽이 공유하는 상태: C:\ProgramData\CubeRemote\agent.json (Flutter 가 mirror, Rust 가 read)
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -124,6 +133,59 @@ class AgentService {
         'os_version':    await DeviceInfoHelper.getOsVersion(),
         'rustdesk_password': pwd,
       });
+
+      // v1.0.30: Rust service heartbeat (cuberemote_heartbeat.rs) 가 읽을 수 있게
+      //   ProgramData/CubeRemote/agent.json 에 등록 정보 + 비번 mirror.
+      //   윈도우 한정 — 다른 platform 은 service 분리 안 됨.
+      if (Platform.isWindows) {
+        await _mirrorAgentJson(
+          shopId: shopId,
+          pId: pId,
+          hId: hId,
+          shopNm: shopNm,
+          deviceNm: deviceNm,
+          rustdeskPassword: pwd,
+        );
+      }
     } catch (_) {}
+  }
+
+  /// Flutter window 와 Rust service 가 공유하는 등록 데이터.
+  /// Flutter 가 etcd-style write, Rust 가 read-only.
+  /// atomic write: temp 파일 → rename 으로 partial-read race 방지.
+  static Future<void> _mirrorAgentJson({
+    required String shopId,
+    required String pId,
+    required String hId,
+    required String shopNm,
+    required String deviceNm,
+    required String rustdeskPassword,
+  }) async {
+    try {
+      final programData = Platform.environment['PROGRAMDATA'] ?? r'C:\ProgramData';
+      final dir = Directory('$programData\\CubeRemote');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final finalFile = File('${dir.path}\\agent.json');
+      final tempFile  = File('${dir.path}\\agent.json.tmp');
+      final json = jsonEncode({
+        'shop_id': shopId,
+        'p_id': pId,
+        'h_id': hId,
+        'shop_nm': shopNm,
+        'device_nm': deviceNm,
+        'rustdesk_password': rustdeskPassword,
+        'agent_version': AGENT_VERSION,
+      });
+      await tempFile.writeAsString(json);
+      // Windows 의 rename 은 destination 존재 시 실패 — delete + rename 패턴
+      if (await finalFile.exists()) {
+        await finalFile.delete();
+      }
+      await tempFile.rename(finalFile.path);
+    } catch (_) {
+      // 실패해도 Flutter 측 heartbeat 는 정상 진행 — Rust 가 한 cycle 늦게 받을 뿐
+    }
   }
 }
