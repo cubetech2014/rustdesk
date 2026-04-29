@@ -131,7 +131,11 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
     // v1.0.24 fix: 부모 GetMaterialApp (RustDesk App()) 의 route 로 진입.
     // 자체 MaterialApp 으로 감싸지 않음 — wrapApp 의 widget tree 분기가
     // RustDesk windowManager / GetX / 기타 plugin 초기화와 충돌해서 빈 창 발생했음.
-    return Scaffold(
+    // v1.0.26 fix: PopScope 로 system back 차단 (Android 뒤로가기로 인증 우회 방지).
+    //   onSuccess 의 Get.back() 은 프로그램 호출이라 canPop:false 와 무관하게 동작.
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
         backgroundColor: const Color(0xFF0B1220),
         body: Stack(
           children: [
@@ -221,6 +225,10 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
                         TextField(
                           controller: _id,
                           autofocus: true,
+                          // v1.0.26 fix: 부모가 다크 테마일 때 TextField 기본 텍스트가 흰색이라
+                          // 흰 카드 배경에서 안 보임. style 명시로 항상 진한 글자색 강제.
+                          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
+                          cursorColor: const Color(0xFFE53935),
                           decoration: _decoration(Icons.person_outline, '아이디를 입력하세요'),
                           onSubmitted: (_) => _submit(),
                         ),
@@ -230,6 +238,8 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
                         TextField(
                           controller: _pw,
                           obscureText: _obscure,
+                          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
+                          cursorColor: const Color(0xFFE53935),
                           decoration: _decoration(Icons.lock_outline, '비밀번호를 입력하세요').copyWith(
                             suffixIcon: IconButton(
                               icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
@@ -297,7 +307,8 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
             ),
           ],
         ),
-      );
+      ),
+    );
   }
 
   Widget _label(String t) => Text(

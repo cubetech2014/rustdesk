@@ -229,6 +229,14 @@ class _UpdateTileWidgetState extends State<_UpdateTileWidget> {
         actions: [
           if (!info.force)
             TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('나중에')),
+          if (info.force)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(d, false);
+                exit(0);
+              },
+              child: const Text('종료', style: TextStyle(color: Color(0xFF64748B))),
+            ),
           FilledButton(
             onPressed: () => Navigator.pop(d, true),
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),

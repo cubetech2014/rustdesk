@@ -309,10 +309,20 @@ class _UpdateGateState extends State<_UpdateGate> {
             ),
           ),
           actions: [
+            // force=false: "나중에" (앱 계속 사용)
+            // force=true:  "종료"   (앱 끄고 나중에 수동 설치 — 강제이지만 즉시 못할 수도)
             if (!info.force)
               TextButton(
                 onPressed: () => Get.back(result: false),
                 child: const Text('나중에'),
+              ),
+            if (info.force)
+              TextButton(
+                onPressed: () {
+                  Get.back(result: false);
+                  exit(0);
+                },
+                child: const Text('종료', style: TextStyle(color: Color(0xFF64748B))),
               ),
             FilledButton(
               onPressed: () => Get.back(result: true),

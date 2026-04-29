@@ -547,6 +547,30 @@ if [ -f "$DESKTOP_SETTINGS" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────
+# [16] desktop_home_page.dart — Windows desktop 좌측 사이드바에 CubeRemote 섹션 주입
+#   v1.0.26 추가: 사용자 요청 (Windows viewer 에 현재 버전 + 수동 업데이트 + 로그아웃 노출)
+#   주입 위치: buildLeftPane children 리스트의 buildPluginEntry() 다음
+#   widget: CubeRemoteDesktopSection (overlay/flutter/lib/cuberemote/desktop_section.dart)
+#   - viewer flavor: 버전 + 로그인 정보 + 업데이트 + 로그아웃
+#   - agent / support: 버전 + 업데이트 (로그인/로그아웃은 SessionService.user==null 자동 hide)
+# ────────────────────────────────────────────────────────────
+DESKTOP_HOME="flutter/lib/desktop/pages/desktop_home_page.dart"
+if [ -f "$DESKTOP_HOME" ]; then
+    if grep -q "CubeRemoteDesktopSection" "$DESKTOP_HOME"; then
+        echo "[16] $DESKTOP_HOME  (skip — CubeRemoteDesktopSection 이미 주입됨)"
+        SKIPPED=$((SKIPPED+1))
+    else
+        echo "[16] $DESKTOP_HOME  CubeRemoteDesktopSection 주입 (사이드바 버전+업데이트+로그아웃)"
+        # import 추가 — multi_window_manager import 다음 줄에
+        sed -i "/^import 'package:flutter_hbb\/utils\/multi_window_manager.dart';/a import 'package:flutter_hbb/cuberemote/desktop_section.dart';" "$DESKTOP_HOME"
+        # widget 삽입 — buildPluginEntry(), 다음 줄에 추가
+        # \n 은 sed 의 GNU 확장 (Linux/Ubuntu CI runner OK)
+        sed -i 's|buildPluginEntry(),|buildPluginEntry(),\n      const CubeRemoteDesktopSection(),|' "$DESKTOP_HOME"
+        PATCHED=$((PATCHED+1))
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # 검증
 # ────────────────────────────────────────────────────────────
 echo ""
@@ -577,6 +601,7 @@ check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
 check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
+check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
 
 if [ "$FAIL" = "1" ]; then
     echo ""
