@@ -727,6 +727,15 @@ class _FileManagerViewState extends State<FileManagerView> {
                       color: Theme.of(context).cardColor,
                       hoverColor: Theme.of(context).hoverColor,
                     ),
+                    // CubeRemote 추가: 자주 쓰는 폴더 빠른 접근 (Local + Remote 양쪽)
+                    //   homePath 가 비어있으면 (remote 가 아직 init 안 됨) skip — 사용자가
+                    //   잠깐 기다린 후 누르면 동작. iOS/Linux 다른 OS 도 home 만 있으면 동작.
+                    _buildQuickAccessButton(
+                      Icons.download, '다운로드', 'Downloads'),
+                    _buildQuickAccessButton(
+                      Icons.desktop_windows, '바탕화면', 'Desktop'),
+                    _buildQuickAccessButton(
+                      Icons.description, '문서', 'Documents'),
                     MenuButton(
                       tooltip: translate('Create Folder'),
                       onPressed: () {
@@ -1468,6 +1477,34 @@ class _FileManagerViewState extends State<FileManagerView> {
         return Rx<bool?>(null);
       }
     }());
+  }
+
+  /// CubeRemote 추가: 자주 쓰는 폴더 빠른 접근 버튼 (다운로드/바탕화면/문서).
+  ///   isLocal=true 면 main_get_home_dir 기반 (관리자 PC),
+  ///   isLocal=false 면 receiveFileDir 로 받은 remote home (POS) 기반.
+  ///   homePath 비어있으면 (remote 가 아직 init 안 됨) tooltip 만 보여주고 클릭 시 silent.
+  Widget _buildQuickAccessButton(IconData icon, String tooltip, String folderName) {
+    return MenuButton(
+      tooltip: tooltip,
+      padding: const EdgeInsets.only(right: 3),
+      onPressed: () {
+        final home = controller.homePath;
+        if (home.isEmpty) return;
+        final isWindows = controller.options.value.isWindows;
+        final sep = isWindows ? '\\' : '/';
+        final hasTrailing = home.endsWith('/') || home.endsWith('\\');
+        final target = hasTrailing ? '$home$folderName' : '$home$sep$folderName';
+        selectedItems.clear();
+        controller.openDirectory(target);
+      },
+      child: Icon(
+        icon,
+        size: 18,
+        color: Theme.of(context).tabBarTheme.labelColor,
+      ),
+      color: Theme.of(context).cardColor,
+      hoverColor: Theme.of(context).hoverColor,
+    );
   }
 
   Widget buildBread() {
