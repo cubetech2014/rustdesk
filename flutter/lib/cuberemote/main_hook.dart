@@ -10,6 +10,7 @@
 // 로 처리 — App() 의 GetMaterialApp 안에 route 로 진입해서 widget tree 변경 없음.
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
