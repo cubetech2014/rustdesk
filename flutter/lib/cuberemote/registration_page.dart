@@ -59,15 +59,20 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
       // v1.0.30: Rust service heartbeat 가 즉시 사용할 수 있게 ProgramData 에 mirror.
       //   AgentService._sendOnce 도 mirror 하지만 RustDesk ID 발급 전엔 skip 되어
       //   첫 heartbeat 가 늦어짐 → 등록 직후 보장 위해 여기서 한 번 기록.
-      //   비번은 _initOnce 가 채워주니까 이 시점엔 빈값 OK (Rust 도 비번 빈값이면
-      //   skip — DB 비번 갱신은 첫 _sendOnce 때 함).
+      //
+      // v1.0.32 fix: 재등록 시 기존 비번 보존. 이전엔 빈값으로 mirror 해서 다음
+      //   60초 동안 Rust service heartbeat 가 빈 password 를 송신 → DB password
+      //   덮어쓰기 → 원격 접속 실패 race window 발생했음. 이제 PREF_RD_PASSWORD 가
+      //   있으면 그대로 mirror, 첫 등록이면 빈값 (정상 — _initOnce 가 곧 채움).
       if (Platform.isWindows) {
+        final existingPassword = prefs.getString(PREF_RD_PASSWORD) ?? '';
         await _writeAgentJson(
           shopId: shopId,
           pId: result['p_id']?.toString() ?? '',
           hId: _hId.text.trim(),
           shopNm: result['shop_nm']?.toString() ?? shopNm,
           deviceNm: deviceNm,
+          rustdeskPassword: existingPassword,
         );
       }
 
@@ -147,14 +152,15 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
     super.dispose();
   }
 
-  /// 등록 직후 ProgramData/CubeRemote/agent.json 에 즉시 mirror.
-  /// rustdesk_password 는 비워둠 — _initOnce 가 채운 후 _sendOnce 가 update 함.
+  /// 등록/재등록 직후 ProgramData/CubeRemote/agent.json 에 즉시 mirror.
+  /// rustdesk_password: 첫 등록이면 빈값 (_initOnce 가 곧 채움), 재등록이면 기존 비번 보존.
   Future<void> _writeAgentJson({
     required String shopId,
     required String pId,
     required String hId,
     required String shopNm,
     required String deviceNm,
+    required String rustdeskPassword,
   }) async {
     try {
       final programData = Platform.environment['PROGRAMDATA'] ?? r'C:\ProgramData';
@@ -169,7 +175,7 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
         'h_id': hId,
         'shop_nm': shopNm,
         'device_nm': deviceNm,
-        'rustdesk_password': '',
+        'rustdesk_password': rustdeskPassword,
         'agent_version': AGENT_VERSION,
       });
       await file.writeAsString(json);

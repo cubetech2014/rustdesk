@@ -1,5 +1,6 @@
 // Windows desktop 좌측 사이드바 CubeRemote 섹션
 //   - 현재 버전 표시
+//   - 매장 정보 + 장비 등록 / 재등록 버튼 (agent 한정)
 //   - 로그인 사용자 정보 (viewer 한정)
 //   - 업데이트 확인 버튼 (pending 있으면 빨간 배지 + 클릭 시 모달)
 //   - 로그아웃 버튼 (viewer 한정)
@@ -8,7 +9,9 @@
 // apply.sh 가 desktop_home_page.dart 의 buildLeftPane children 에 widget 주입.
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
+import 'registration_page.dart';
 import 'session_service.dart';
 import 'update_service.dart';
 
@@ -22,6 +25,10 @@ class CubeRemoteDesktopSection extends StatefulWidget {
 class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
   bool _checking = false;
   UpdateInfo? _pending;
+  // agent 매장/장비 정보 (재등록 시 갱신)
+  String? _shopId;
+  String? _shopNm;
+  String? _deviceNm;
 
   @override
   void initState() {
@@ -32,6 +39,21 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
         if (mounted) setState(() => _pending = info);
       });
     }
+    if (isAgentFlavor) {
+      _loadShopInfo();
+    }
+  }
+
+  /// SharedPreferences 에서 매장 정보 읽어 state 갱신.
+  /// 재등록 후에도 호출되어 사이드바 즉시 갱신.
+  Future<void> _loadShopInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _shopId = prefs.getString(PREF_SHOP_ID);
+      _shopNm = prefs.getString(PREF_SHOP_NM);
+      _deviceNm = prefs.getString(PREF_DEVICE_NM);
+    });
   }
 
   Future<void> _onCheckUpdate() async {
@@ -52,6 +74,25 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
       );
     } else {
       await UpdateService.downloadAndInstall(context, info);
+    }
+  }
+
+  /// agent 한정: 등록/재등록 페이지 push. 완료 시 pop 후 _loadShopInfo 로 사이드바 갱신.
+  /// 매장 변경은 SharedPreferences + ProgramData/agent.json 둘 다 갱신되어
+  /// 다음 heartbeat (Flutter / Rust) 부터 새 shop_id 로 송신.
+  Future<void> _onReregister() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CubeRemoteRegistrationPage(
+          onDone: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadShopInfo();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('매장 정보가 갱신되었습니다'), duration: Duration(seconds: 2)),
+      );
     }
   }
 
@@ -82,6 +123,7 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
   Widget build(BuildContext context) {
     final user = isViewerFlavor ? SessionService.user : null;
     final hasUpdate = _pending != null;
+    final isAgentRegistered = isAgentFlavor && (_shopId?.isNotEmpty ?? false);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 16, 12, 8),
@@ -116,12 +158,22 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
               ),
             ],
           ),
+          // viewer: 로그인 사용자 정보
           if (user != null) ...[
             const SizedBox(height: 8),
             _miniRow(
               icon: Icons.account_circle_outlined,
               text: user.id,
               subtitle: '${user.name} / ${user.pNm}',
+            ),
+          ],
+          // agent: 매장 / 장비 정보
+          if (isAgentRegistered) ...[
+            const SizedBox(height: 8),
+            _miniRow(
+              icon: Icons.store_outlined,
+              text: _shopNm ?? '',
+              subtitle: 'ID: $_shopId${_deviceNm != null && _deviceNm!.isNotEmpty ? ' · $_deviceNm' : ''}',
             ),
           ],
           const SizedBox(height: 10),
@@ -135,6 +187,15 @@ class _CubeRemoteDesktopSectionState extends State<CubeRemoteDesktopSection> {
               loading: _checking,
               onTap: _checking ? null : _onCheckUpdate,
             ),
+          // agent: 등록 / 재등록 버튼
+          if (isAgentFlavor) ...[
+            const SizedBox(height: 6),
+            _SidebarButton(
+              icon: Icons.app_registration,
+              label: isAgentRegistered ? '장비 등록 / 재등록' : '장비 등록',
+              onTap: _onReregister,
+            ),
+          ],
           if (isViewerFlavor) ...[
             const SizedBox(height: 6),
             _SidebarButton(
