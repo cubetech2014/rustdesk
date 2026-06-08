@@ -454,6 +454,47 @@ PYEOF
 fi
 
 # ────────────────────────────────────────────────────────────
+# [13d] MSI 설치 마법사 체크박스 정리 (MyInstallDirDlg.wxs + ShortcutProperties.wxs)
+#   - "Install Printer" 체크박스  : agent + viewer 양쪽 제거 (RustDesk 원격 가상 프린터.
+#       제어/피제어 어디서도 불필요. UI 탭은 [15g] 에서 이미 hide 했으나 인스톨러 옵션은 남아있었음)
+#   - "Create desktop icon" 체크박스: agent(POS)만 제거 (키오스크 깔끔.
+#       viewer 는 관리자 수동 실행 편의 위해 유지)
+#   ★ 함정: 체크박스만 지우면 Property 기본값이 1 이라 오히려 항상 설치됨.
+#     → 체크박스 Control 삭제 + Property 기본값(Value="1"→"0") 을 반드시 함께 변경해야 실제 미설치.
+#   silent 설치(msiexec /qn PRINTER=1 / DESKTOPSHORTCUTS=1 등 명령줄 지정)는 Property 기본값보다
+#     우선하므로 이 변경에 영향받지 않음 (배포 스크립트에서 필요 시 명시 override 가능).
+#   시작메뉴 단축키(STARTMENUSHORTCUTS) 는 그대로 유지 → viewer 는 시작메뉴로 수동 실행 가능.
+# ────────────────────────────────────────────────────────────
+MSI_DLG="res/msi/Package/UI/MyInstallDirDlg.wxs"
+MSI_PROPS="res/msi/Package/Fragments/ShortcutProperties.wxs"
+if [ -f "$MSI_DLG" ] && [ -f "$MSI_PROPS" ]; then
+    # --- 프린터: 전 flavor 제거 ---
+    if grep -q 'Id="ChkBoxInstallPrinter"' "$MSI_DLG"; then
+        echo "[13d] $MSI_DLG  Install Printer 체크박스 제거 (전 flavor)"
+        sed -i '/Id="ChkBoxInstallPrinter"/d' "$MSI_DLG"
+        PATCHED=$((PATCHED+1))
+    else
+        echo "[13d] Install Printer 체크박스 (skip — 이미 제거됨)"
+        SKIPPED=$((SKIPPED+1))
+    fi
+    # 기본값 OFF (sed 는 이미 0 이면 no-op → idempotent)
+    sed -i 's|<Property Id="PRINTER" Value="1"|<Property Id="PRINTER" Value="0"|' "$MSI_PROPS"
+
+    # --- 바탕화면 아이콘: agent(POS)만 제거 ---
+    if [ "$FLAVOR" = "agent" ]; then
+        if grep -q 'Id="ChkBoxDesktopShortcuts"' "$MSI_DLG"; then
+            echo "[13d] $MSI_DLG  Create desktop icon 체크박스 제거 (agent 만)"
+            sed -i '/Id="ChkBoxDesktopShortcuts"/d' "$MSI_DLG"
+            PATCHED=$((PATCHED+1))
+        else
+            echo "[13d] Create desktop icon 체크박스 (skip — 이미 제거됨)"
+            SKIPPED=$((SKIPPED+1))
+        fi
+        sed -i 's|<Property Id="DESKTOPSHORTCUTS" Value="1"|<Property Id="DESKTOPSHORTCUTS" Value="0"|' "$MSI_PROPS"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────
 # [14] Windows EXE/MSI/Tray 아이콘 — res/icon.ico + res/tray-icon.ico 덮어쓰기
 #   res/icon.ico:        Cargo.toml winres + res/msi/preprocess.py 사용
 #                        → EXE 파일 속성, MSI 설치 마법사, 제어판 ARP, 시작메뉴 단축키
@@ -642,6 +683,11 @@ check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
 check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
+# [13d] MSI 인스톨러 체크박스 정리 (프린터 전 flavor / 바탕화면 agent 만)
+check "MSI 프린터 기본값 OFF" "$MSI_PROPS" '<Property Id="PRINTER" Value="0"'
+if [ "$FLAVOR" = "agent" ]; then
+    check "MSI 바탕화면 기본값 OFF" "$MSI_PROPS" '<Property Id="DESKTOPSHORTCUTS" Value="0"'
+fi
 check "Android installer 등록" "$MAIN_ACTIVITY" "CubeRemoteInstaller.register"
 check "Android 설치 권한"  "$MANIFEST" "REQUEST_INSTALL_PACKAGES"
 # v1.0.30: Rust service heartbeat 모듈 + lib.rs 등록 + server.rs spawn
