@@ -129,6 +129,12 @@ class _UpdateGateState extends State<_UpdateGate> {
       await bind.mainSetOption(key: 'approve-mode', value: 'password');
       await bind.mainSetOption(key: 'temporary-password-length', value: '8');
       await bind.mainSetOption(key: 'allow-numeric-one-time-password', value: 'Y');
+      // v1.0.34 fix: 임시 비번은 최초 접근 시 lazy 하게 한 번 생성되어 저장되고,
+      // 옵션만 바꾼다고 재생성되지 않음 (RustDesk 자체 설정 화면도 옵션 변경 감지 시
+      // mainUpdateTemporaryPassword() 를 명시적으로 호출해서 강제 재생성함 — server_model.dart
+      // updatePasswordModel() 참고). 이 호출이 없으면 옵션을 위에서 다 바꿔도 이전에 이미
+      // 생성돼있던 영문+숫자 6자리 비번이 그대로 남아있어 숫자만 나오지 않았음.
+      await bind.mainUpdateTemporaryPassword();
     } catch (_) {}
   }
 

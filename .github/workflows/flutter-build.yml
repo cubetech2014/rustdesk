@@ -272,7 +272,10 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.exe
+          # 파일명에 -qs 필수: RustDesk core_main.rs 의 is_quick_support_exe() 가 실행 파일명으로
+          # Quick Support 여부를 판단해서, 최초 실행 시 UAC 1회 → SYSTEM 권한 자동 승격을 트리거함.
+          # 이름이 바뀌면 (mirror 시에도) 이 기능이 꺼짐 — dashboard ViewerDownload.jsx 도 동일 규칙 적용.
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}-qs.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2

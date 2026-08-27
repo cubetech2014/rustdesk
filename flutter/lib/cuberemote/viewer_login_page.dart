@@ -323,6 +323,11 @@ class _ViewerLoginPageState extends State<ViewerLoginPage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         filled: true,
         fillColor: Colors.white,
+        // v1.0.34 fix: 부모 다크 테마(common.dart darkTheme)의 hoverColor 가
+        // 불투명(alpha 255) 이라 InputDecorator 가 hover/focus 시 fillColor 위에
+        // 그대로 덮어써서 필드가 새까맣게 보임 (텍스트 안 보임). 명시적으로 고정.
+        hoverColor: Colors.white,
+        focusColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),

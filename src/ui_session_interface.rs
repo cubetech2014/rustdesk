@@ -1035,6 +1035,15 @@ impl<T: InvokeUiSession> Session<T> {
         lock_modes: i32,
         down_or_up: bool,
     ) {
+        // rustdesk-org/rdev's USB HID table maps `Lang1` (the Korean Hangul/English
+        // toggle, i.e. 한/영 key) to the wrong HID code (0x8B) and has no entry at all
+        // for the real one (spec code 0x90, what Flutter's PhysicalKeyboardKey.lang1
+        // reports), so the key event is silently dropped end-to-end. `Kana` (HID 0x88)
+        // already round-trips correctly to Windows VK 0x15 — which Windows treats as
+        // VK_HANGUL vs VK_KANA purely based on the receiving side's active keyboard
+        // layout, since they are literally the same VK constant — so redirect the real
+        // 0x90 code there instead of relying on the crate's broken Lang1 entry.
+        let usb_hid = if usb_hid == 0x90 { 0x88 } else { usb_hid };
         let key = rdev::usb_hid_key_from_code(usb_hid as _);
 
         #[cfg(any(target_os = "android", target_os = "ios"))]
