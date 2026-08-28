@@ -309,7 +309,7 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.msi
-            ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.exe
+            ./SignOutput/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}-qs.exe
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
 # DISABLED:   build-for-windows-sciter:
