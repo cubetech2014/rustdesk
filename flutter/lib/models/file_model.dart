@@ -358,6 +358,14 @@ class FileController {
   void set homePath(String path) => options.value.home = path;
   OverlayDialogManager? get dialogManager => rootState.target?.dialogManager;
 
+  // CubeRemote 추가: 빠른 접근(다운로드/바탕화면/문서) 지원용.
+  //   remote 의 options.home 은 initDirAndHome() 이 "접속 시 복원된 remote_dir"
+  //   (지난번에 보고 있던 폴더) 로 채운다. 실제 사용자 홈이 아니라서
+  //   home + "\Desktop" 조합이 엉뚱한 경로가 된다. 빈 경로를 조회하면 상대가
+  //   진짜 홈을 돌려주므로 그 값으로 확정하고 캐시한다.
+  Completer<String>? _homeProbe;
+  bool _homeVerified = false;
+
   String get shortPath {
     final dirPath = directory.value.path;
     if (dirPath.startsWith(homePath)) {
@@ -470,6 +478,69 @@ class FileController {
     history.add(directory.value.path);
   }
 
+  /// CubeRemote 추가: 이 쪽 홈 디렉터리를 확정한다.
+  ///   local  — mainGetHomeDir() 로 onReady 에서 이미 채워져 있으므로 그대로.
+  ///   remote — 빈 경로 조회 1회로 상대의 진짜 홈을 받아온다. 응답은
+  ///            initDirAndHome() 의 probe 분기가 받아 _homeProbe 를 완료시킨다.
+  ///            (화면 이동 없음. 실패하면 3초 후 기존 값으로 폴백)
+  Future<String> ensureHome() async {
+    if (isLocal) return homePath;
+    if (_homeVerified && homePath.isNotEmpty) return homePath;
+    final pending = _homeProbe;
+    if (pending != null) return pending.future;
+
+    final probe = Completer<String>();
+    _homeProbe = probe;
+    Timer(Duration(seconds: 3), () {
+      if (!probe.isCompleted) probe.complete("");
+    });
+    try {
+      await bind.sessionReadRemoteDir(
+          sessionId: sessionId,
+          path: "",
+          includeHidden: options.value.showHidden);
+    } catch (e) {
+      debugPrint("ensureHome: failed to request remote home: $e");
+    }
+    final resolved = await probe.future;
+    if (identical(_homeProbe, probe)) _homeProbe = null;
+    if (resolved.isEmpty) return homePath;
+    _homeVerified = true;
+    return resolved;
+  }
+
+  /// CubeRemote 추가: 후보 경로들을 한 번에 조회해 먼저 존재하는 폴더로 이동.
+  ///   원격은 없는 경로면 응답 자체가 오지 않아(ui_cm_interface::read_dir 이
+  ///   실패 시 무응답) 조회가 2초 뒤 timeout 된다. 순차로 시도하면 후보 수만큼
+  ///   기다려야 하므로 전부 동시에 던져놓고, 우선순위 순서대로 결과를 본다.
+  ///   1순위가 존재하면 바로 이동하고 나머지 응답은 버린다.
+  ///   하나도 못 찾으면 현재 화면은 그대로 두고 false.
+  Future<bool> openFirstExisting(List<String> paths) async {
+    final targets = <String>[];
+    for (final p in paths) {
+      if (p.isNotEmpty && !targets.contains(p)) targets.add(p);
+    }
+    if (targets.isEmpty) return false;
+    final showHidden = options.value.showHidden;
+    final pending = targets.map((p) async {
+      try {
+        return await fileFetcher.fetchDirectory(p, isLocal, showHidden);
+      } catch (e) {
+        debugPrint("openFirstExisting: $p not available ($e)");
+        return null;
+      }
+    }).toList();
+    for (final task in pending) {
+      final fd = await task;
+      if (fd == null || fd.path.isEmpty) continue;
+      pushHistory();
+      fd.format(options.value.isWindows, sort: sortBy.value);
+      directory.value = fd;
+      return true;
+    }
+    return false;
+  }
+
   void goToHomeDirectory() {
     if (isLocal) {
       openDirectory(homePath);
@@ -521,10 +592,21 @@ class FileController {
           debugPrint("update receive details: ${fd.path}");
           jobController.jobTable.refresh();
         }
-      } else if (options.value.home.isEmpty) {
-        options.value.home = fd.path;
-        debugPrint("init remote home: ${fd.path}");
-        directory.value = fd;
+      } else {
+        // CubeRemote 추가: ensureHome() 이 요청한 "진짜 홈" 응답이면 값만 확정하고
+        // 화면은 건드리지 않는다. (빠른 접근 버튼은 곧바로 하위 폴더로 이동한다)
+        final probe = _homeProbe;
+        final needInitDir = options.value.home.isEmpty;
+        if (probe != null && !probe.isCompleted) {
+          options.value.home = fd.path;
+          debugPrint("resolved remote home: ${fd.path}");
+          probe.complete(fd.path);
+        }
+        if (needInitDir) {
+          options.value.home = fd.path;
+          debugPrint("init remote home: ${fd.path}");
+          directory.value = fd;
+        }
       }
     } catch (e) {
       debugPrint("initDirAndHome err=$e");

@@ -21,11 +21,41 @@ import 'package:flutter_hbb/web/dummy.dart'
     if (dart.library.html) 'package:flutter_hbb/web/web_unique.dart';
 
 import '../../consts.dart';
+import '../../cuberemote/quick_folders.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../widgets/popup_menu.dart';
+
+// ── CubeRemote 추가: 파일 전송 화면 촘촘한 레이아웃 ────────────────────────
+// RustDesk 기본값은 목록이 성기고 글씨가 커서 한 화면에 몇 줄 안 들어온다.
+// 행 높이 / 글자 / 아이콘을 한 벌로 줄여 타사 파일 전송 UI 수준의 밀도로 맞춘다.
+// 행 안쪽 실제 높이는 _kRowHeight - 2 (Padding vertical 1) 이므로, 값을 바꿀 때는
+// _kRowHeight ≥ _kRowIconSize + 5 를 지킬 것. 안 지키면 아이콘/글자가 세로로 넘친다.
+
+/// 파일 목록 한 줄 높이 (RustDesk 기본 30). ListView itemExtent 와 행 Container 가 공유.
+const double _kRowHeight = 25;
+
+/// 정렬 헤더(이름/수정한 날짜/크기) 높이 (RustDesk 기본 25).
+const double _kHeaderHeight = 22;
+
+/// 파일/폴더 이름. 지정 안 하면 테마 bodyMedium(14) 이라 너무 크다.
+const double _kNameFontSize = 12;
+
+/// 수정 날짜 / 크기. 기본은 12 와 10 으로 서로 달라 들쭉날쭉해 보였다.
+const double _kMetaFontSize = 11;
+
+/// 목록 안 파일/폴더 아이콘. 원본 SVG 가 32x32 라 지정하지 않으면 행을 꽉 채운다.
+const double _kRowIconSize = 18;
+
+/// 툴바 아이콘 상자. RustDesk SVG 버튼은 크기 지정이 없어 32 로 그려지는데,
+/// 촘촘한 목록에 비해 과하게 커서 SVG/Material 양쪽 다 이 값으로 통일한다.
+const double _kToolbarIconBox = 26;
+
+/// 툴바 Material 아이콘 글리프. 글리프가 상자의 ~80% 를 채우므로 SVG(잉크 65%)와
+/// 같은 크기로 보이려면 상자보다 작게 잡아야 한다.
+const double _kToolbarIconGlyph = 20;
 
 /// status of location bar
 enum LocationStatus {
@@ -418,6 +448,10 @@ class _FileManagerViewState extends State<FileManagerView> {
   double? _windowWidthPrev;
   double _fileTransferMinimumWidth = 0.0;
 
+  /// CubeRemote 추가: 빠른 접근 폴더 조회 중 중복 클릭 방지.
+  /// (같은 경로로 read job 이 겹치면 FileFetcher.registerReadTask 가 throw 한다)
+  bool _quickFolderBusy = false;
+
   FileController get controller => widget.controller;
   bool get isLocal => widget.controller.isLocal;
   FFI get _ffi => widget._ffi;
@@ -566,6 +600,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       quarterTurns: 2,
                       child: SvgPicture.asset(
                         "assets/arrow.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -583,6 +619,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       quarterTurns: 3,
                       child: SvgPicture.asset(
                         "assets/arrow.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -651,6 +689,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       },
                       child: SvgPicture.asset(
                         "assets/search.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -662,6 +702,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       onPressed: null,
                       child: SvgPicture.asset(
                         "assets/close.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -677,6 +719,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       },
                       child: SvgPicture.asset(
                         "assets/close.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -695,6 +739,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                 },
                 child: SvgPicture.asset(
                   "assets/refresh.svg",
+                  width: _kToolbarIconBox,
+                  height: _kToolbarIconBox,
                   colorFilter:
                       svgColor(Theme.of(context).tabBarTheme.labelColor),
                 ),
@@ -721,6 +767,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       },
                       child: SvgPicture.asset(
                         "assets/home.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -728,14 +776,13 @@ class _FileManagerViewState extends State<FileManagerView> {
                       hoverColor: Theme.of(context).hoverColor,
                     ),
                     // CubeRemote 추가: 자주 쓰는 폴더 빠른 접근 (Local + Remote 양쪽)
-                    //   homePath 가 비어있으면 (remote 가 아직 init 안 됨) skip — 사용자가
-                    //   잠깐 기다린 후 누르면 동작. iOS/Linux 다른 OS 도 home 만 있으면 동작.
+                    _buildQuickAccessTextButton(CubeQuickFolder.pos),
                     _buildQuickAccessButton(
-                      Icons.download, '다운로드', 'Downloads'),
+                        CubeQuickFolder.downloads, Icons.download),
                     _buildQuickAccessButton(
-                      Icons.desktop_windows, '바탕화면', 'Desktop'),
+                        CubeQuickFolder.desktop, Icons.desktop_windows),
                     _buildQuickAccessButton(
-                      Icons.description, '문서', 'Documents'),
+                        CubeQuickFolder.documents, Icons.description),
                     MenuButton(
                       tooltip: translate('Create Folder'),
                       onPressed: () {
@@ -816,6 +863,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                       },
                       child: SvgPicture.asset(
                         "assets/folder_new.svg",
+                        width: _kToolbarIconBox,
+                        height: _kToolbarIconBox,
                         colorFilter:
                             svgColor(Theme.of(context).tabBarTheme.labelColor),
                       ),
@@ -833,6 +882,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                               : null,
                           child: SvgPicture.asset(
                             "assets/trash.svg",
+                            width: _kToolbarIconBox,
+                            height: _kToolbarIconBox,
                             colorFilter: svgColor(
                                 Theme.of(context).tabBarTheme.labelColor),
                           ),
@@ -1038,6 +1089,8 @@ class _FileManagerViewState extends State<FileManagerView> {
         ),
         child: SvgPicture.asset(
           "assets/dots.svg",
+          width: _kToolbarIconBox,
+          height: _kToolbarIconBox,
           colorFilter: svgColor(Theme.of(context).tabBarTheme.labelColor),
         ),
         color: Theme.of(context).cardColor,
@@ -1080,8 +1133,7 @@ class _FileManagerViewState extends State<FileManagerView> {
           selectedItems.clear();
           return;
         }
-        _jumpToEntry(isLocal, searchResult.first, scrollController,
-            kDesktopFileTransferRowHeight);
+        _jumpToEntry(isLocal, searchResult.first, scrollController, _kRowHeight);
       },
       onSearch: (buffer) {
         debugPrint("searching for $buffer");
@@ -1093,8 +1145,7 @@ class _FileManagerViewState extends State<FileManagerView> {
           selectedItems.clear();
           return;
         }
-        _jumpToEntry(isLocal, searchResult.first, scrollController,
-            kDesktopFileTransferRowHeight);
+        _jumpToEntry(isLocal, searchResult.first, scrollController, _kRowHeight);
       },
       child: Obx(() {
         final entries = controller.directory.value.entries;
@@ -1175,7 +1226,7 @@ class _FileManagerViewState extends State<FileManagerView> {
                       : null,
                 ),
                 key: ValueKey(entry.name),
-                height: kDesktopFileTransferRowHeight,
+                height: _kRowHeight,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -1204,6 +1255,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                                                 entry.isFile
                                                     ? "assets/file.svg"
                                                     : "assets/folder.svg",
+                                                width: _kRowIconSize,
+                                                height: _kRowIconSize,
                                                 colorFilter: svgColor(
                                                     Theme.of(context)
                                                         .tabBarTheme
@@ -1212,6 +1265,7 @@ class _FileManagerViewState extends State<FileManagerView> {
                                         Expanded(
                                             child: Text(entry.name.nonBreaking,
                                                 style: TextStyle(
+                                                    fontSize: _kNameFontSize,
                                                     color: selectedItems.items
                                                             .contains(entry)
                                                         ? Colors.white
@@ -1239,7 +1293,7 @@ class _FileManagerViewState extends State<FileManagerView> {
                                         lastModifiedStr,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontSize: 12,
+                                          fontSize: _kMetaFontSize,
                                           color: selectedItems.items
                                                   .contains(entry)
                                               ? Colors.white70
@@ -1266,7 +1320,7 @@ class _FileManagerViewState extends State<FileManagerView> {
                                     sizeStr,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        fontSize: 10,
+                                        fontSize: _kMetaFontSize,
                                         color:
                                             selectedItems.items.contains(entry)
                                                 ? Colors.white70
@@ -1299,7 +1353,7 @@ class _FileManagerViewState extends State<FileManagerView> {
             Expanded(
               child: ListView.builder(
                 controller: scrollController,
-                itemExtent: kDesktopFileTransferRowHeight,
+                itemExtent: _kRowHeight,
                 itemBuilder: (context, index) {
                   return rows[index];
                 },
@@ -1402,9 +1456,18 @@ class _FileManagerViewState extends State<FileManagerView> {
 
   Widget _buildFileBrowserHeader(BuildContext context) {
     final padding = EdgeInsets.all(1.0);
-    return SizedBox(
+    return Container(
       key: _globalHeaderKey,
-      height: kDesktopFileTransferHeaderHeight,
+      height: _kHeaderHeight,
+      // CubeRemote: 헤더와 목록 사이 실선 하나. 표처럼 읽히게 해준다.
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor,
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Obx(
@@ -1435,8 +1498,15 @@ class _FileManagerViewState extends State<FileManagerView> {
   }
 
   Widget headerItemFunc(double? width, SortBy sortBy, String name) {
+    // CubeRemote: dataTableTheme.headingTextStyle 은 이 앱에서 정의된 적이 없어
+    // 항상 null → 본문과 같은 14px 로 그려졌다. 목록보다 살짝 작고 굵게 잡는다.
     final headerTextStyle =
-        Theme.of(context).dataTableTheme.headingTextStyle ?? TextStyle();
+        (Theme.of(context).dataTableTheme.headingTextStyle ?? TextStyle())
+            .copyWith(
+      fontSize: _kMetaFontSize,
+      fontWeight: FontWeight.w600,
+      color: Theme.of(context).textTheme.bodySmall?.color,
+    );
     return ObxValue<Rx<bool?>>(
         (ascending) => InkWell(
               onTap: () {
@@ -1450,7 +1520,7 @@ class _FileManagerViewState extends State<FileManagerView> {
               },
               child: SizedBox(
                 width: width,
-                height: kDesktopFileTransferHeaderHeight,
+                height: _kHeaderHeight,
                 child: Row(
                   children: [
                     Expanded(
@@ -1465,6 +1535,8 @@ class _FileManagerViewState extends State<FileManagerView> {
                             ascending.value!
                                 ? Icons.keyboard_arrow_up_rounded
                                 : Icons.keyboard_arrow_down_rounded,
+                            // 헤더 높이가 22 라 기본 24 아이콘은 넘친다.
+                            size: 16,
                           )
                         : SizedBox()
                   ],
@@ -1480,31 +1552,92 @@ class _FileManagerViewState extends State<FileManagerView> {
   }
 
   /// CubeRemote 추가: 자주 쓰는 폴더 빠른 접근 버튼 (다운로드/바탕화면/문서).
-  ///   isLocal=true 면 main_get_home_dir 기반 (관리자 PC),
-  ///   isLocal=false 면 receiveFileDir 로 받은 remote home (POS) 기반.
-  ///   homePath 비어있으면 (remote 가 아직 init 안 됨) tooltip 만 보여주고 클릭 시 silent.
-  Widget _buildQuickAccessButton(IconData icon, String tooltip, String folderName) {
+  ///   아이콘 상자는 툴바의 SVG 버튼(intrinsic 32x32) 과 동일하게 맞춘다.
+  Widget _buildQuickAccessButton(CubeQuickFolder folder, IconData icon) {
     return MenuButton(
-      tooltip: tooltip,
+      tooltip: folder.label,
       padding: const EdgeInsets.only(right: 3),
-      onPressed: () {
-        final home = controller.homePath;
-        if (home.isEmpty) return;
-        final isWindows = controller.options.value.isWindows;
-        final sep = isWindows ? '\\' : '/';
-        final hasTrailing = home.endsWith('/') || home.endsWith('\\');
-        final target = hasTrailing ? '$home$folderName' : '$home$sep$folderName';
-        selectedItems.clear();
-        controller.openDirectory(target);
-      },
-      child: Icon(
-        icon,
-        size: 18,
-        color: Theme.of(context).tabBarTheme.labelColor,
+      onPressed: () => _openQuickFolder(folder),
+      child: SizedBox(
+        width: _kToolbarIconBox,
+        height: _kToolbarIconBox,
+        child: Center(
+          child: Icon(
+            icon,
+            size: _kToolbarIconGlyph,
+            color: Theme.of(context).tabBarTheme.labelColor,
+          ),
+        ),
       ),
       color: Theme.of(context).cardColor,
       hoverColor: Theme.of(context).hoverColor,
     );
+  }
+
+  /// CubeRemote 추가: 아이콘 대신 글자로 표시하는 빠른 접근 버튼 (POS).
+  ///   상자 크기는 아이콘 버튼과 동일하게 맞춘다.
+  Widget _buildQuickAccessTextButton(CubeQuickFolder folder) {
+    return MenuButton(
+      tooltip: folder.label,
+      padding: const EdgeInsets.only(right: 3),
+      onPressed: () => _openQuickFolder(folder),
+      child: SizedBox(
+        width: _kToolbarIconBox,
+        height: _kToolbarIconBox,
+        child: Center(
+          child: Text(
+            folder.label,
+            // 12px w600 기준 "POS" 폭이 약 23 — 상자(26) 안에 들어간다.
+            style: TextStyle(
+              fontSize: _kNameFontSize,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).tabBarTheme.labelColor,
+            ),
+          ),
+        ),
+      ),
+      color: Theme.of(context).cardColor,
+      hoverColor: Theme.of(context).hoverColor,
+    );
+  }
+
+  /// CubeRemote 추가: 빠른 접근 폴더로 이동.
+  ///   로컬은 Windows Known Folder API 로 실제 경로를 조회한다. 다운로드를 다른
+  ///   드라이브로 옮겼거나(H:\download) OneDrive 가 바탕화면을 "OneDrive\바탕 화면"
+  ///   으로 리디렉션한 경우까지 그대로 따라간다.
+  ///   원격은 질의할 방법이 없으므로 진짜 홈을 먼저 확정한 뒤(ensureHome) 후보
+  ///   경로를 한 번에 조회해 존재하는 폴더로 이동한다.
+  ///   못 찾으면 조용히 실패하지 않고 토스트로 알린다.
+  Future<void> _openQuickFolder(CubeQuickFolder folder) async {
+    if (_quickFolderBusy) return;
+    _quickFolderBusy = true;
+    try {
+      selectedItems.clear();
+      final isWindows = controller.options.value.isWindows;
+      final List<String> candidates;
+      if (isLocal) {
+        candidates = CubeQuickFolders.localCandidates(
+            folder, controller.homePath, isWindows);
+      } else if (!CubeQuickFolders.needsHome(folder)) {
+        // POS 는 절대 경로라 홈 확정 왕복이 필요 없다.
+        candidates = CubeQuickFolders.remoteCandidates(folder, '', isWindows);
+      } else {
+        final home = await controller.ensureHome();
+        if (home.isEmpty) {
+          showToast('원격 홈 폴더를 확인할 수 없습니다');
+          return;
+        }
+        candidates = CubeQuickFolders.remoteCandidates(folder, home, isWindows);
+      }
+      final opened = candidates.isEmpty
+          ? false
+          : await controller.openFirstExisting(candidates);
+      if (!opened) {
+        showToast('${folder.label} 폴더를 찾을 수 없습니다');
+      }
+    } finally {
+      _quickFolderBusy = false;
+    }
   }
 
   Widget buildBread() {
@@ -1534,7 +1667,9 @@ class _FileManagerViewState extends State<FileManagerView> {
                     },
                     child: BreadCrumb(
                       items: items,
-                      divider: const Icon(Icons.keyboard_arrow_right_rounded),
+                      // CubeRemote: 기본 24 는 촘촘해진 경로 표시줄에 비해 크다.
+                      divider: const Icon(Icons.keyboard_arrow_right_rounded,
+                          size: 16),
                       overflow: ScrollableOverflow(
                         controller: _breadCrumbScroller,
                       ),
@@ -1651,7 +1786,8 @@ class _FileManagerViewState extends State<FileManagerView> {
         list.asMap().entries.map(
               (e) => BreadCrumbItem(
                 content: TextButton(
-                  child: Text(e.value),
+                  child: Text(e.value,
+                      style: const TextStyle(fontSize: _kNameFontSize)),
                   style: ButtonStyle(
                     minimumSize: MaterialStateProperty.all(
                       Size(0, 0),
@@ -1691,6 +1827,8 @@ class _FileManagerViewState extends State<FileManagerView> {
           _locationStatus.value == LocationStatus.pathLocation
               ? "assets/folder.svg"
               : "assets/search.svg",
+          width: _kToolbarIconBox,
+          height: _kToolbarIconBox,
           colorFilter: svgColor(Theme.of(context).tabBarTheme.labelColor),
         ),
         Expanded(

@@ -243,6 +243,15 @@ fi
 # [10/11] flutter_ffi.rs initialize() — incoming-only 모드 강제
 #   → ConnectionPage 자동 제거 (POS는 원격 제어 받기만)
 #   home_page.dart 의 `if (!bind.isIncomingOnly())` 분기로 자동 적용
+#
+# [10c] access-mode=full 강제 (agent/support 한정)
+#   flutter/lib/common.dart 의 canBeBlocked()/buildRemoteBlock() — RustDesk 자체
+#   "원격에서 내 설정 화면 조작 차단" 마스크. access-mode 가 'full'/'view' 가
+#   아닌 커스텀 상태 + allow-remote-config-modification=N(기본값)이면, 원격 마우스가
+#   홈 화면(우리 CubeRemote 사이드바 포함) 위에 hover 후 120ms 뒤 AbsorbPointer + 반투명
+#   마스크로 클릭을 막아버림 — "장비 등록/재등록" 버튼을 원격으로 못 누르는 원인.
+#   agent/support 는 무인 원격 제어가 핵심 설계라 access-mode=full 로 강제해 무력화.
+#   (v1.0.35 원격 hover 시 홈 화면 비활성화 버그 분석 후 추가)
 # ────────────────────────────────────────────────────────────
 FFI_RS="src/flutter_ffi.rs"
 if [ -f "$FFI_RS" ]; then
@@ -253,7 +262,13 @@ if [ -f "$FFI_RS" ]; then
         # 기존 CubeRemote 주입 라인이 있으면 먼저 제거 (다른 flavor 일 수 있음)
         sed -i '/CubeRemote: force conn-type/d' "$FFI_RS"
         sed -i '/HARD_SETTINGS.write().unwrap().insert("conn-type"/d' "$FFI_RS"
-        sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force conn-type=$HARD_CONN_TYPE\\n    config::HARD_SETTINGS.write().unwrap().insert(\"conn-type\".to_string(), \"$HARD_CONN_TYPE\".to_string());" "$FFI_RS"
+        sed -i '/CubeRemote: force access-mode=full/d' "$FFI_RS"
+        sed -i '/HARD_SETTINGS.write().unwrap().insert("access-mode"/d' "$FFI_RS"
+        ACCESS_MODE_INSERT=""
+        if [ "$HARD_CONN_TYPE" = "incoming" ]; then
+            ACCESS_MODE_INSERT="\\n    // CubeRemote: force access-mode=full (remote-block mask workaround)\\n    config::HARD_SETTINGS.write().unwrap().insert(\"access-mode\".to_string(), \"full\".to_string());"
+        fi
+        sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force conn-type=$HARD_CONN_TYPE\\n    config::HARD_SETTINGS.write().unwrap().insert(\"conn-type\".to_string(), \"$HARD_CONN_TYPE\".to_string());$ACCESS_MODE_INSERT" "$FFI_RS"
     fi
 fi
 
@@ -677,6 +692,9 @@ check "Android app_name" "$STRINGS_XML" ">$ANDROID_LABEL<"
 check "main.dart 훅"   "$MAIN_DART"   "cuberemote/main_hook"
 check "Cargo winres"   "$CARGO"       "ProductName = \"$APP_NAME_NEW\""
 check "conn-type=$HARD_CONN_TYPE" "$FFI_RS" "force conn-type=$HARD_CONN_TYPE"
+if [ "$HARD_CONN_TYPE" = "incoming" ]; then
+    check "access-mode=full (원격 차단 마스크 해제)" "$FFI_RS" "force access-mode=full"
+fi
 check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
@@ -694,6 +712,14 @@ check "Android 설치 권한"  "$MANIFEST" "REQUEST_INSTALL_PACKAGES"
 check "Rust heartbeat module"   "src/cuberemote_heartbeat.rs" "pub async fn run"
 check "Rust heartbeat lib.rs"   "src/lib.rs" "pub mod cuberemote_heartbeat"
 check "Rust heartbeat spawn"    "src/server.rs" "cuberemote_heartbeat::run"
+# 파일 전송 빠른 접근 (로컬 Known Folder 실경로 + 원격 home 확정)
+check "빠른 접근 모듈"  "flutter/lib/cuberemote/quick_folders.dart" "SHGetKnownFolderPath"
+check "빠른 접근 버튼"  "flutter/lib/desktop/pages/file_manager_page.dart" "_openQuickFolder"
+check "POS 빠른 접근"   "flutter/lib/cuberemote/quick_folders.dart" "_posInstallDirs"
+check "원격 home 확정"  "flutter/lib/models/file_model.dart" "Future<String> ensureHome"
+# 파일 전송 화면 라이트 고정 + 촘촘한 레이아웃
+check "전송창 라이트 고정" "flutter/lib/main.dart" "appType == kAppTypeDesktopFileTransfer"
+check "전송창 촘촘 레이아웃" "flutter/lib/desktop/pages/file_manager_page.dart" "const double _kRowHeight"
 # titlebar 아이콘 검증은 sed/grep 으로 안 되니 파일 존재만 체크
 if [ ! -f "$FLUTTER_ASSET_ICON" ]; then
     echo "  ✗ Flutter titlebar 아이콘  ($FLUTTER_ASSET_ICON 없음 — RustDesk SVG fallback)"

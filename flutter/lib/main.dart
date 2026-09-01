@@ -239,7 +239,12 @@ void runMultiWindow(
   _runApp(
     title,
     widget,
-    MyTheme.currentThemeMode(),
+    // CubeRemote: 파일 전송 창만 항상 라이트 고정. POS 지원 중 파일 목록 가독성이
+    // 우선이고, Windows 다크 모드를 따라가면 목록이 어두워져 눈에 잘 안 들어온다.
+    // (메인 창 / 원격 화면은 기존대로 사용자 테마 설정을 따른다)
+    appType == kAppTypeDesktopFileTransfer
+        ? ThemeMode.light
+        : MyTheme.currentThemeMode(),
   );
   // we do not hide titlebar on win7 because of the frame overflow.
   if (kUseCompatibleUiMode) {
@@ -563,6 +568,8 @@ Widget _keepScaleBuilder(BuildContext context, Widget? child) {
 _registerEventHandler() {
   if (isDesktop && desktopType != DesktopType.main) {
     platformFFI.registerEventHandler('theme', 'theme', (evt) async {
+      // CubeRemote: 파일 전송 창은 라이트 고정이라 메인 창 테마 변경을 따라가지 않는다.
+      if (desktopType == DesktopType.fileTransfer) return;
       String? dark = evt['dark'];
       if (dark != null) {
         await MyTheme.changeDarkMode(MyTheme.themeModeFromString(dark));
