@@ -262,13 +262,27 @@ if [ -f "$FFI_RS" ]; then
         # 기존 CubeRemote 주입 라인이 있으면 먼저 제거 (다른 flavor 일 수 있음)
         sed -i '/CubeRemote: force conn-type/d' "$FFI_RS"
         sed -i '/HARD_SETTINGS.write().unwrap().insert("conn-type"/d' "$FFI_RS"
+        sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force conn-type=$HARD_CONN_TYPE\\n    config::HARD_SETTINGS.write().unwrap().insert(\"conn-type\".to_string(), \"$HARD_CONN_TYPE\".to_string());" "$FFI_RS"
+    fi
+
+    # [10c] access-mode=full — conn-type 과 별개의 독립 idempotent 체크.
+    #   주의: 이 repo 의 src/flutter_ffi.rs 는 "conn-type=incoming" 이 이미 커밋된
+    #   상태라 위 [10/11] 블록이 agent/support 빌드에서 매번 skip 된다 (우연히 값이
+    #   맞아서 35개 릴리스 내내 무해했음). 그 skip 분기 안에 access-mode 주입을
+    #   같이 넣었다가 agent/support 에서 전혀 실행이 안 되는 버그가 났다 (v1.0.36
+    #   빌드 실패 — 검증 단계가 정상적으로 잡아냄). 그래서 conn-type 블록과 완전히
+    #   분리된 자기 자신만의 grep 체크로 둔다.
+    if [ "$HARD_CONN_TYPE" = "incoming" ]; then
+        if grep -q "CubeRemote: force access-mode=full" "$FFI_RS"; then
+            echo "[10c] $FFI_RS  (skip — access-mode=full 이미 주입)"
+        else
+            echo "[10c] $FFI_RS  access-mode=full 강제 주입 (원격 차단 마스크 해제)"
+            sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force access-mode=full (remote-block mask workaround)\\n    config::HARD_SETTINGS.write().unwrap().insert(\"access-mode\".to_string(), \"full\".to_string());" "$FFI_RS"
+        fi
+    else
+        # outgoing(viewer)은 강제 불필요 — 다른 flavor 빌드 잔재가 있으면 제거
         sed -i '/CubeRemote: force access-mode=full/d' "$FFI_RS"
         sed -i '/HARD_SETTINGS.write().unwrap().insert("access-mode"/d' "$FFI_RS"
-        ACCESS_MODE_INSERT=""
-        if [ "$HARD_CONN_TYPE" = "incoming" ]; then
-            ACCESS_MODE_INSERT="\\n    // CubeRemote: force access-mode=full (remote-block mask workaround)\\n    config::HARD_SETTINGS.write().unwrap().insert(\"access-mode\".to_string(), \"full\".to_string());"
-        fi
-        sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force conn-type=$HARD_CONN_TYPE\\n    config::HARD_SETTINGS.write().unwrap().insert(\"conn-type\".to_string(), \"$HARD_CONN_TYPE\".to_string());$ACCESS_MODE_INSERT" "$FFI_RS"
     fi
 fi
 
