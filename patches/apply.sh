@@ -252,6 +252,14 @@ fi
 #   마스크로 클릭을 막아버림 — "장비 등록/재등록" 버튼을 원격으로 못 누르는 원인.
 #   agent/support 는 무인 원격 제어가 핵심 설계라 access-mode=full 로 강제해 무력화.
 #   (v1.0.35 원격 hover 시 홈 화면 비활성화 버그 분석 후 추가)
+#
+#   주의: libs/hbb_common/src/config.rs 확인 결과 HARD_SETTINGS 는 is_incoming_only()/
+#   is_outgoing_only() 같은 "전용 함수가 명시적으로 체크하는 키" 에만 효과가 있다
+#   (conn-type 이 여기 해당 — 그래서 그동안 잘 작동함). access-mode 는 그런 전용
+#   함수가 없고 범용 Config::get_option() 으로만 읽히는데, 이 함수는
+#   OVERWRITE_SETTINGS → 사용자 설정 → DEFAULT_SETTINGS 순서만 보고 HARD_SETTINGS 는
+#   아예 안 본다. 그래서 v1.0.37 은 access-mode 를 HARD_SETTINGS 에 넣었지만 완전히
+#   무효였음 (빌드는 성공, 런타임에 아무 효과 없음). 반드시 OVERWRITE_SETTINGS 사용.
 # ────────────────────────────────────────────────────────────
 FFI_RS="src/flutter_ffi.rs"
 if [ -f "$FFI_RS" ]; then
@@ -276,12 +284,13 @@ if [ -f "$FFI_RS" ]; then
         if grep -q "CubeRemote: force access-mode=full" "$FFI_RS"; then
             echo "[10c] $FFI_RS  (skip — access-mode=full 이미 주입)"
         else
-            echo "[10c] $FFI_RS  access-mode=full 강제 주입 (원격 차단 마스크 해제)"
-            sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force access-mode=full (remote-block mask workaround)\\n    config::HARD_SETTINGS.write().unwrap().insert(\"access-mode\".to_string(), \"full\".to_string());" "$FFI_RS"
+            echo "[10c] $FFI_RS  access-mode=full 강제 주입 (원격 차단 마스크 해제, OVERWRITE_SETTINGS)"
+            sed -i "/^fn initialize(app_dir: &str, custom_client_config: &str) {/a\\    // CubeRemote: force access-mode=full (remote-block mask workaround)\\n    config::OVERWRITE_SETTINGS.write().unwrap().insert(\"access-mode\".to_string(), \"full\".to_string());" "$FFI_RS"
         fi
     else
         # outgoing(viewer)은 강제 불필요 — 다른 flavor 빌드 잔재가 있으면 제거
         sed -i '/CubeRemote: force access-mode=full/d' "$FFI_RS"
+        sed -i '/OVERWRITE_SETTINGS.write().unwrap().insert("access-mode"/d' "$FFI_RS"
         sed -i '/HARD_SETTINGS.write().unwrap().insert("access-mode"/d' "$FFI_RS"
     fi
 fi
