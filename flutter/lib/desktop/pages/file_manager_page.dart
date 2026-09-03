@@ -452,6 +452,11 @@ class _FileManagerViewState extends State<FileManagerView> {
   /// (같은 경로로 read job 이 겹치면 FileFetcher.registerReadTask 가 throw 한다)
   bool _quickFolderBusy = false;
 
+  /// CubeRemote 추가: 마우스가 올라간 줄의 전체 경로. 탐색기식 hover 강조용.
+  /// entry 객체가 아니라 경로 문자열로 비교한다 — 목록을 새로 읽으면 Entry 인스턴스는
+  /// 갈리지만 경로는 그대로라 hover 가 끊기지 않는다.
+  final _hoverPath = ''.obs;
+
   FileController get controller => widget.controller;
   bool get isLocal => widget.controller.isLocal;
   FFI get _ffi => widget._ffi;
@@ -1210,11 +1215,21 @@ class _FileManagerViewState extends State<FileManagerView> {
 
           return Padding(
             padding: EdgeInsets.symmetric(vertical: 1),
-            child: Obx(() => Container(
+            // CubeRemote: 탐색기처럼 평소에는 배경 없이, 마우스 올린 줄만 회색.
+            // RustDesk 기본값은 모든 줄을 cardColor(라이트 #EFEFF2) 로 칠해서
+            // 흰 바탕 위에 옅은 회색 덩어리가 깔려 글자 가시성이 떨어졌다.
+            child: MouseRegion(
+              onEnter: (_) => _hoverPath.value = entry.path,
+              onExit: (_) {
+                if (_hoverPath.value == entry.path) _hoverPath.value = '';
+              },
+              child: Obx(() => Container(
                 decoration: BoxDecoration(
                   color: selectedItems.items.contains(entry)
                       ? MyTheme.button
-                      : Theme.of(context).cardColor,
+                      : _hoverPath.value == entry.path
+                          ? Theme.of(context).hoverColor
+                          : Colors.transparent,
                   borderRadius: BorderRadius.all(
                     Radius.circular(5.0),
                   ),
@@ -1292,12 +1307,18 @@ class _FileManagerViewState extends State<FileManagerView> {
                                       child: Text(
                                         lastModifiedStr,
                                         overflow: TextOverflow.ellipsis,
+                                        // CubeRemote: 기존 darkGray(#949494) 는 흰
+                                        // 바탕에서 대비가 낮아 날짜가 잘 안 보였다.
+                                        // 탐색기처럼 이름 열과 같은 본문 색을 쓴다.
                                         style: TextStyle(
                                           fontSize: _kMetaFontSize,
                                           color: selectedItems.items
                                                   .contains(entry)
-                                              ? Colors.white70
-                                              : MyTheme.darkGray,
+                                              ? Colors.white
+                                              : Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.color,
                                         ),
                                       )),
                                 ),
@@ -1321,10 +1342,13 @@ class _FileManagerViewState extends State<FileManagerView> {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                         fontSize: _kMetaFontSize,
-                                        color:
-                                            selectedItems.items.contains(entry)
-                                                ? Colors.white70
-                                                : MyTheme.darkGray),
+                                        color: selectedItems.items
+                                                .contains(entry)
+                                            ? Colors.white
+                                            : Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.color),
                                   ),
                                 ),
                                 onTap: onTap,
@@ -1338,6 +1362,7 @@ class _FileManagerViewState extends State<FileManagerView> {
                     ),
                   ],
                 ))),
+            ),
           );
         }).toList(growable: false);
 

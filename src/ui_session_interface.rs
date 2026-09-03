@@ -1038,13 +1038,17 @@ impl<T: InvokeUiSession> Session<T> {
         // rustdesk-org/rdev's USB HID table maps `Lang1` (the Korean Hangul/English
         // toggle, i.e. 한/영 key) to the wrong HID code (0x8B) and has no entry at all
         // for the real one (spec code 0x90, what Flutter's PhysicalKeyboardKey.lang1
-        // reports), so the key event is silently dropped end-to-end. `Kana` (HID 0x88)
-        // already round-trips correctly to Windows VK 0x15 — which Windows treats as
-        // VK_HANGUL vs VK_KANA purely based on the receiving side's active keyboard
-        // layout, since they are literally the same VK constant — so redirect the real
-        // 0x90 code there instead of relying on the crate's broken Lang1 entry.
-        let usb_hid = if usb_hid == 0x90 { 0x88 } else { usb_hid };
+        // reports), so usb_hid_key_from_code(0x90) always misses and the key event is
+        // silently dropped. Redirecting to `Kana` (HID 0x88) gets the Windows VK right
+        // (0x15, shared by VK_HANGUL/VK_KANA) but NOT the scancode: Kana's table entry
+        // carries the JIS keyboard's physical position (0x0080), and Windows' IME
+        // hotkey recognition for this particular toggle key keys off the real Korean
+        // 106-key hardware scancode (0xF2) too, not just the VK — so that indirection
+        // alone still silently did nothing. Hardcode the real VK+scancode pair instead
+        // of routing through rdev's key table at all for this one key.
         let key = rdev::usb_hid_key_from_code(usb_hid as _);
+        const HANGUL_WIN_VK: u32 = 0x15;
+        const HANGUL_WIN_SCANCODE: KeyCode = 0xF2;
 
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let position_code: KeyCode = 0;
@@ -1052,9 +1056,17 @@ impl<T: InvokeUiSession> Session<T> {
         let platform_code: KeyCode = 0;
 
         #[cfg(target_os = "windows")]
-        let platform_code: u32 = rdev::win_code_from_key(key).unwrap_or(0);
+        let platform_code: u32 = if usb_hid == 0x90 {
+            HANGUL_WIN_VK
+        } else {
+            rdev::win_code_from_key(key).unwrap_or(0)
+        };
         #[cfg(target_os = "windows")]
-        let position_code: KeyCode = rdev::win_scancode_from_key(key).unwrap_or(0) as _;
+        let position_code: KeyCode = if usb_hid == 0x90 {
+            HANGUL_WIN_SCANCODE
+        } else {
+            rdev::win_scancode_from_key(key).unwrap_or(0) as _
+        };
 
         #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
         let position_code: KeyCode = rdev::code_from_key(key).unwrap_or(0) as _;

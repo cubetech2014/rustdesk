@@ -138,9 +138,17 @@ pub fn core_main() -> Option<Vec<String>> {
     }
     #[cfg(windows)]
     {
+        // portable self-extracting packer(libs/portable)가 임시 폴더에 압축을 풀고 그
+        // 내부 실행 파일을 새 프로세스로 띄우기 때문에, 이 프로세스의 실제 argv[0](arg_exe)는
+        // 사용자가 다운로드한 원본 파일명(-qs 포함)이 아니라 임시 경로 이름이 되어
+        // is_quick_support_exe(&arg_exe) 판정이 항상 실패했었다. 패커는 원본 파일명을
+        // RUSTDESK_APPNAME 환경변수로 넘겨주므로(libs/portable/src/main.rs) 이것도 같이 확인한다.
+        let runtime_appname =
+            std::env::var(crate::common::PORTABLE_APPNAME_RUNTIME_ENV_KEY).unwrap_or_default();
         _is_quick_support |= !crate::platform::is_installed()
             && args.is_empty()
             && (is_quick_support_exe(&arg_exe)
+                || is_quick_support_exe(&runtime_appname)
                 || config::LocalConfig::get_option("pre-elevate-service") == "Y"
                 || (!click_setup && crate::platform::is_elevated(None).unwrap_or(false)));
         crate::portable_service::client::set_quick_support(_is_quick_support);

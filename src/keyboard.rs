@@ -1106,6 +1106,12 @@ fn _map_keyboard_mode(_peer: &str, event: &Event, mut key_event: KeyEvent) -> Op
     };
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let keycode = match _peer {
+        // rdev has no table entry for USB HID 0x90 (Korean Hangul/English toggle,
+        // Flutter's PhysicalKeyboardKey.lang1) at all — see ui_session_interface.rs
+        // _handle_key_non_flutter_simulation for the Windows-sender version of this
+        // same fix. Hardcode the real Korean 106-key hardware scancode (0xF2) instead
+        // of going through rdev's (missing) lookup.
+        OS_LOWER_WINDOWS if event.usb_hid == 0x90 => 0xF2,
         OS_LOWER_WINDOWS => rdev::usb_hid_code_to_win_scancode(event.usb_hid as _)?,
         OS_LOWER_LINUX => rdev::usb_hid_code_to_linux_code(event.usb_hid as _)?,
         OS_LOWER_MACOS => {
