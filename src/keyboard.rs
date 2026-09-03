@@ -32,6 +32,14 @@ const OS_LOWER_MACOS: &str = "macos";
 #[allow(dead_code)]
 const OS_LOWER_ANDROID: &str = "android";
 
+// 한/영 키. Windows 의 VK_HANGUL(0x15) 과 한글 106키 하드웨어 스캔코드(0xF2).
+// ui_session_interface.rs 의 _handle_key_non_flutter_simulation 에서 USB HID 0x90 을
+// 이 두 값으로 채워 넣고, 여기서 Map 모드 인코딩 시 VK 경로로 보낼지 판단한다.
+#[allow(dead_code)]
+const HANGUL_WIN_VK: u32 = 0x15;
+#[allow(dead_code)]
+const HANGUL_WIN_SCANCODE: u32 = 0xF2;
+
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 static KEYBOARD_HOOKED: AtomicBool = AtomicBool::new(false);
 
@@ -1066,6 +1074,14 @@ fn _map_keyboard_mode(_peer: &str, event: &Event, mut key_event: KeyEvent) -> Op
 
     #[cfg(target_os = "windows")]
     let keycode = match _peer {
+        // 한/영 키(VK_HANGUL)는 스캔코드로 주입하면 원격 IME 토글이 걸리지 않는다.
+        // Legacy 모드가 토글에 성공하는 이유가 ControlKey::Hangul -> 가상키(VK) 주입이기
+        // 때문. Map 모드에서도 이 키만 상위 워드에 VK 를 실어 보내면 agent 가 가상키로
+        // 주입한다 (input_service.rs translate_process_code -> sim_rdev_rawkey_virtual).
+        // 나머지 글자키는 그대로 스캔코드로 가야 원격 IME 가 한글을 조합할 수 있다.
+        OS_LOWER_WINDOWS if event.platform_code == HANGUL_WIN_VK => {
+            (HANGUL_WIN_VK << 16) | HANGUL_WIN_SCANCODE
+        }
         OS_LOWER_WINDOWS => {
             // https://github.com/rustdesk/rustdesk/issues/1371
             // Filter scancodes that are greater than 255 and the height word is not 0xE0.
@@ -1106,12 +1122,11 @@ fn _map_keyboard_mode(_peer: &str, event: &Event, mut key_event: KeyEvent) -> Op
     };
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let keycode = match _peer {
-        // rdev has no table entry for USB HID 0x90 (Korean Hangul/English toggle,
-        // Flutter's PhysicalKeyboardKey.lang1) at all — see ui_session_interface.rs
-        // _handle_key_non_flutter_simulation for the Windows-sender version of this
-        // same fix. Hardcode the real Korean 106-key hardware scancode (0xF2) instead
-        // of going through rdev's (missing) lookup.
-        OS_LOWER_WINDOWS if event.usb_hid == 0x90 => 0xF2,
+        // 한/영 키는 스캔코드로 주입하면 원격 IME 토글이 안 걸린다. 상위 워드에 VK 를
+        // 실어 보내 agent 가 가상키로 주입하게 한다 (Windows 송신 경로와 동일한 처리).
+        OS_LOWER_WINDOWS if event.usb_hid == 0x90 => {
+            ((HANGUL_WIN_VK << 16) | HANGUL_WIN_SCANCODE) as _
+        }
         OS_LOWER_WINDOWS => rdev::usb_hid_code_to_win_scancode(event.usb_hid as _)?,
         OS_LOWER_LINUX => rdev::usb_hid_code_to_linux_code(event.usb_hid as _)?,
         OS_LOWER_MACOS => {
