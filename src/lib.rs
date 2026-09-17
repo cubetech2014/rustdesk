@@ -25,7 +25,8 @@ pub mod ipc;
     target_os = "android",
     target_os = "ios",
     feature = "cli",
-    feature = "flutter"
+    feature = "flutter",
+    feature = "cube_headless"
 )))]
 pub mod ui;
 mod version;

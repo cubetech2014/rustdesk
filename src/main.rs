@@ -28,7 +28,14 @@ fn main() {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(2);
     }
     if let Some(args) = crate::core_main::core_main().as_mut() {
+        #[cfg(not(feature = "cube_headless"))]
         ui::start(args);
+        // CubeRemote headless: 띄울 UI 가 없다.
+        // core_main 은 --service / --server / --install 같은 경로를 스스로 처리하고
+        // None 을 돌려준다. 여기까지 왔다는 건 "UI 를 띄울 상황" 이라는 뜻이라
+        // headless 에서는 할 일이 없다.
+        #[cfg(feature = "cube_headless")]
+        let _ = args;
     }
     common::global_clean();
 }

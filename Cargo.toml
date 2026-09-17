@@ -23,6 +23,12 @@ path = "src/service.rs"
 [features]
 inline = []
 cli = []
+# CubeRemote: UI 없는 32비트 Windows agent (B안) 용.
+# Flutter Windows 데스크톱이 x64 전용이라 32비트 POS 에는 현재 agent 를 못 깐다.
+# 기존 non-flutter 경로(cli / sciter inline)는 RustDesk 가 Flutter 로 넘어가며
+# 방치돼 stable 에서 컴파일조차 안 되므로, sciter ui 만 들어내는 자체 feature 를 둔다.
+# 기본 off — flutter 빌드에는 아무 영향이 없다.
+cube_headless = []
 use_samplerate = ["samplerate"]
 use_rubato = ["rubato"]
 use_dasp = ["dasp"]

@@ -111,24 +111,24 @@ jobs:
           ls -la "${VCPKG_ROOT}/installed/${{ env.VCPKG_TRIPLET }}/lib" || true
 
       # ── PoC 본체 ──────────────────────────────────────────────────────────
-      # 기본 feature + inline(sciter) 로 빌드한다. cli feature 는 위 주석대로 죽은 코드라 못 쓴다.
-      # 이 조합은 과거 RustDesk 가 실제로 x86 배포하던 경로 그대로다
-      # (flutter-build.yml 의 주석 처리된 build-for-windows-sciter i686 항목 참고).
+      # cube_headless feature 로 빌드한다 — B안이 실제로 만들 바로 그 형태다.
+      # (sciter ui 만 제외, core_main / server / scrap / cuberemote_heartbeat 는 전부 포함)
       #
-      # sciter-rs 는 32비트일 때 dyn_x86 브랜치를 써야 한다 — 이걸 빼먹으면 링크가 깨진다.
+      # 기성 경로를 재사용하려던 두 시도는 둘 다 방치 코드에 막혔다. 되돌리지 말 것:
+      #   --features cli    -> src/cli.rs 가 2024-03 이후 방치. Interface trait 등 19개 에러
+      #   --features inline -> sciter-rs dyn_x86 브랜치가 #![feature(abi_thiscall)] 사용.
+      #                        1.73 에서 stable 이 된 속성이라 stable 채널에선 되레 E0554
+      # RustDesk 가 Flutter 로 넘어가며 나머지 UI 경로를 사실상 버린 결과다.
+      #
       # hwcodec/vram 은 ffmpeg 를 요구하므로 제외 (위 vcpkg 단계에서 안 깔았다).
       #
       # check 가 아니라 build 인 이유: x86 은 심볼 앞에 _ 가 붙는 등 링커 단계에서
       # 터지는 게 진짜 위험이라, 실행파일이 나와야 답이 나온다.
-      - name: Build rustdesk core (i686)
+      - name: Build rustdesk core (i686, headless)
         shell: bash
         run: |
           set -e
-          (python3 res/inline-sciter.py || python res/inline-sciter.py)
-          test -f src/ui/inline.rs && echo "src/ui/inline.rs 생성됨"
-          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' ./Cargo.toml
-          grep -n 'sciter-rs' ./Cargo.toml
-          cargo build --release --target "${{ env.CARGO_TARGET }}" --features inline --bins
+          cargo build --release --target "${{ env.CARGO_TARGET }}" --features cube_headless --bins
           echo "===== 산출물 ====="
           ls -la "target/${{ env.CARGO_TARGET }}/release/"*.exe
 
@@ -151,7 +151,7 @@ jobs:
             echo "|---|---|"
             echo "| target | \`${{ env.CARGO_TARGET }}\` |"
             echo "| vcpkg triplet | \`${{ env.VCPKG_TRIPLET }}\` |"
-            echo "| features | \`inline\` (sciter UI 포함 · flutter/hwcodec 제외) |"
+            echo "| features | \`cube_headless\` (sciter UI · flutter · hwcodec 제외) |"
             echo ""
             echo "산출물이 생성됐다면 B안(경량 Rust agent) 진행 가능."
             echo "vcpkg 단계에서 죽었으면 코덱 포트의 x86 문제, cargo 단계에서 죽었으면"
