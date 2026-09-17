@@ -71,7 +71,7 @@ def patch_build_rs(crate_dir):
     s = io.open(p, encoding="utf-8", newline="").read()
 
     if MARKER in s:
-        print("  build.rs: 이미 패치됨, 건너뜀")
+        print("  build.rs: already patched, skipping")
         return
 
     crlf = "\r\n" in s
@@ -80,8 +80,8 @@ def patch_build_rs(crate_dir):
     n = s.count(old)
     if n != 1:
         raise SystemExit(
-            "FATAL: build.rs 에서 원본 get_lib_dir() 를 %d 개 찾음 (1개여야 함). "
-            "libsodium-sys 버전이 바뀐 듯하다." % n
+            "FATAL: found %d matches of the original get_lib_dir() in build.rs "
+            "(expected exactly 1). libsodium-sys version may have changed." % n
         )
     io.open(p, "w", encoding="utf-8", newline="").write(s.replace(old, new))
 
@@ -90,40 +90,52 @@ def patch_build_rs(crate_dir):
     # 그 문자열 자체로 판정하면 안 된다. msvc 하드코딩 경로가 사라졌는지를 본다.
     chk = io.open(p, encoding="utf-8", newline="").read()
     if MARKER not in chk:
-        raise SystemExit("FATAL: 패치 후에도 새 코드가 없다")
+        raise SystemExit("FATAL: patched marker missing after write")
     for lit in BAD_LITERALS:
         if '"%s"' % lit in chk:
-            raise SystemExit("FATAL: 버그 있는 하드코딩 경로가 남아있다: %s" % lit)
-    print("  build.rs 패치 완료")
+            raise SystemExit("FATAL: buggy hardcoded path still present: %s" % lit)
+    print("  build.rs patched")
 
 
 def inject_patch_section(cargo_toml, crate_dir):
     s = io.open(cargo_toml, encoding="utf-8", newline="").read()
     if PATCH_LINE_MARKER in s:
-        print("  Cargo.toml: 이미 주입됨, 건너뜀")
+        print("  Cargo.toml: patch entry already present, skipping")
         return
     nl = "\r\n" if "\r\n" in s else "\n"
     header = "[patch.crates-io]" + nl
     if header not in s:
-        raise SystemExit("FATAL: Cargo.toml 에 [patch.crates-io] 섹션이 없다")
+        raise SystemExit("FATAL: no [patch.crates-io] section in Cargo.toml")
     path_val = crate_dir.replace("\\", "/")
     entry = 'libsodium-sys = { path = "%s" }%s' % (path_val, nl)
     io.open(cargo_toml, "w", encoding="utf-8", newline="").write(
         s.replace(header, header + entry, 1)
     )
-    print("  Cargo.toml 주입 완료: %s" % path_val)
+    print("  Cargo.toml patched -> %s" % path_val)
+
+
+def _force_utf8_output():
+    """CI 러너의 콘솔 인코딩이 cp1252 라서 비ASCII 출력이 죽는다.
+    아래 메시지는 전부 ASCII 로 쓰지만, 이후 수정으로 비ASCII 가 섞여도
+    죽지 않도록 스트림 인코딩도 같이 바꿔둔다."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
 
 def main():
+    _force_utf8_output()
     if len(sys.argv) != 3:
-        raise SystemExit("사용: fix_libsodium_sys.py <crate_dir> <cargo_toml>")
+        raise SystemExit("usage: fix_libsodium_sys.py <crate_dir> <cargo_toml>")
     crate_dir = os.path.abspath(sys.argv[1])
     cargo_toml = sys.argv[2]
     if not os.path.isfile(os.path.join(crate_dir, "build.rs")):
-        raise SystemExit("FATAL: %s 에 build.rs 가 없다" % crate_dir)
+        raise SystemExit("FATAL: no build.rs in %s" % crate_dir)
     patch_build_rs(crate_dir)
     inject_patch_section(cargo_toml, crate_dir)
-    print("완료")
+    print("done")
 
 
 if __name__ == "__main__":
