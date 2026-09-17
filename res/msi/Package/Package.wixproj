@@ -3,7 +3,8 @@
     <IncludeSearchPaths>
     </IncludeSearchPaths>
     <Configurations>Release</Configurations>
-    <Platforms>x64</Platforms>
+    <!-- CubeRemote: 32비트 POS 용 x86 MSI 추가. x64 는 그대로 둔다. -->
+    <Platforms>x64;x86</Platforms>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Includes.wxi" />
