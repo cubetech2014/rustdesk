@@ -34,6 +34,11 @@ pub use version::*;
 // CubeRemote: agent heartbeat (Windows service 에서 동작 — Flutter window 와 무관)
 #[cfg(target_os = "windows")]
 pub mod cuberemote_heartbeat;
+// CubeRemote: headless agent 초기화 (설정 강제 + 영구 비밀번호 + 매장 검증).
+// Flutter 빌드에서는 Dart(agent_service / registration_page)가 하던 일이라
+// cube_headless 에서만 필요하다.
+#[cfg(all(target_os = "windows", feature = "cube_headless"))]
+pub mod cuberemote_agent;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 mod bridge_generated;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
