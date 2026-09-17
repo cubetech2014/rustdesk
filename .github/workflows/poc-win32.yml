@@ -15,10 +15,20 @@
 #
 # 의도적으로 범위에서 뺀 것:
 #   - Flutter        : Windows 데스크톱이 x64 전용. 32비트 불가라는 것이 B안의 출발점이다.
-#   - sciter ui      : cli feature 로 제외. B안은 UI 없는 service 형태다.
 #   - hwcodec/ffmpeg : B안 최소 요구사항이 아니다. ffmpeg 의 x86 빌드는 느리고 실패 위험이
 #                      커서, 실패해도 정작 알고 싶은 것(코덱+캡처+링크)을 못 알려준다.
 #                      소프트웨어 인코딩으로 POS 화면에 충분한지는 별도 판단 사항.
+#
+# 1차 시도(--features cli)가 남긴 것 — 같은 함정 다시 밟지 말 것:
+#   cli feature 로 sciter ui 를 빼려 했으나 src/cli.rs 가 2024-03-27 이후 방치된 코드라
+#   (src/client.rs 는 2026-04-15) Interface trait / initialize() 인자수 / Data::Login 튜플 /
+#   Stream 타입 변경을 못 따라가 19개 에러로 죽었다. x86 과 무관한 순수 bit-rot 이다.
+#   다만 그 시점까지 온 것만으로 얻은 게 크다:
+#     vcpkg x86-windows-static (libvpx/aom/libyuv/opus) 빌드 성공,
+#     libs/scrap (DXGI 캡처 + bindgen FFI) i686 컴파일 성공,
+#     hbb_common / platform::windows / server / cuberemote_heartbeat 모두 컴파일 성공.
+#   그래서 이제 남은 미지수는 '링크' 하나다. sciter 를 포함한 채로라도 링크가 되면
+#   headless(B안)는 코드를 빼는 방향이라 당연히 링크된다.
 #
 # 참고 — 32비트 지원 흔적이 이미 코드에 남아 있다 (과거 sciter x86 빌드 라인):
 #   .cargo/config.toml       : [target.i686-pc-windows-msvc] rustflags 존재
@@ -101,13 +111,24 @@ jobs:
           ls -la "${VCPKG_ROOT}/installed/${{ env.VCPKG_TRIPLET }}/lib" || true
 
       # ── PoC 본체 ──────────────────────────────────────────────────────────
-      # cli feature: sciter ui 와 flutter 를 모두 제외한다 (src/lib.rs 의 cfg 참고).
-      # 링크까지 수행하는 build 를 쓴다 — check 로는 x86 심볼/링커 문제를 못 잡는다.
-      - name: Build rustdesk core (i686, no UI)
+      # 기본 feature + inline(sciter) 로 빌드한다. cli feature 는 위 주석대로 죽은 코드라 못 쓴다.
+      # 이 조합은 과거 RustDesk 가 실제로 x86 배포하던 경로 그대로다
+      # (flutter-build.yml 의 주석 처리된 build-for-windows-sciter i686 항목 참고).
+      #
+      # sciter-rs 는 32비트일 때 dyn_x86 브랜치를 써야 한다 — 이걸 빼먹으면 링크가 깨진다.
+      # hwcodec/vram 은 ffmpeg 를 요구하므로 제외 (위 vcpkg 단계에서 안 깔았다).
+      #
+      # check 가 아니라 build 인 이유: x86 은 심볼 앞에 _ 가 붙는 등 링커 단계에서
+      # 터지는 게 진짜 위험이라, 실행파일이 나와야 답이 나온다.
+      - name: Build rustdesk core (i686)
         shell: bash
         run: |
           set -e
-          cargo build --release --target "${{ env.CARGO_TARGET }}" --features cli
+          (python3 res/inline-sciter.py || python res/inline-sciter.py)
+          test -f src/ui/inline.rs && echo "src/ui/inline.rs 생성됨"
+          sed -i 's/branch = "dyn"/branch = "dyn_x86"/g' ./Cargo.toml
+          grep -n 'sciter-rs' ./Cargo.toml
+          cargo build --release --target "${{ env.CARGO_TARGET }}" --features inline --bins
           echo "===== 산출물 ====="
           ls -la "target/${{ env.CARGO_TARGET }}/release/"*.exe
 
@@ -118,28 +139,6 @@ jobs:
           name: poc-win32-i686-binaries
           path: target/${{ env.CARGO_TARGET }}/release/*.exe
           if-no-files-found: warn
-
-      # ── 참고 정보 ─────────────────────────────────────────────────────────
-      # B안 실제 바이너리 형태는 "core_main 있음 + ui 없음" 이다. 그런데 현재 cfg 는
-      # cli feature 를 켜면 ui 와 core_main 이 함께 빠진다. 여기서는 CI 워크스페이스에서만
-      # core_main 의 cli 제외 조건을 떼고 컴파일이 되는지 본다 (커밋되는 패치 아님).
-      # 실패해도 PoC 결론 자체를 뒤집지는 않으므로 continue-on-error.
-      - name: (참고) core_main 포함 컴파일 확인
-        if: success()
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -e
-          LINE=$(grep -n '^pub mod core_main;' src/lib.rs | cut -d: -f1)
-          if [ -z "$LINE" ]; then
-            echo "core_main 선언을 못 찾음 — lib.rs 구조가 바뀐 듯. 건너뜀"
-            exit 1
-          fi
-          CFG_LINE=$((LINE - 1))
-          echo "수정 전: $(sed -n "${CFG_LINE}p" src/lib.rs)"
-          sed -i "${CFG_LINE}s/, feature = \"cli\"//" src/lib.rs
-          echo "수정 후: $(sed -n "${CFG_LINE}p" src/lib.rs)"
-          cargo check --release --target "${{ env.CARGO_TARGET }}" --features cli
 
       - name: 결과 요약
         if: always()
@@ -152,7 +151,7 @@ jobs:
             echo "|---|---|"
             echo "| target | \`${{ env.CARGO_TARGET }}\` |"
             echo "| vcpkg triplet | \`${{ env.VCPKG_TRIPLET }}\` |"
-            echo "| features | \`cli\` (flutter/sciter/hwcodec 제외) |"
+            echo "| features | \`inline\` (sciter UI 포함 · flutter/hwcodec 제외) |"
             echo ""
             echo "산출물이 생성됐다면 B안(경량 Rust agent) 진행 가능."
             echo "vcpkg 단계에서 죽었으면 코덱 포트의 x86 문제, cargo 단계에서 죽었으면"
