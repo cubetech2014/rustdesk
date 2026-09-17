@@ -1,0 +1,160 @@
+# CubeRemote Phase 0 PoC — 32비트 Windows (i686) core 빌드 가능 여부 확인
+#
+# 왜 필요한가:
+#   운영 중인 Windows POS 중 32비트가 적지 않은데, Flutter Windows 데스크톱은 x64 전용이라
+#   현재 agent 는 32비트에 아예 설치할 수 없다. 대안(B안)은 UI 없는 경량 Rust agent 인데,
+#   그 전부가 단 하나의 전제에 걸려 있다:
+#
+#     "RustDesk 네이티브 스택(scrap DXGI 캡처 + libvpx/aom/libyuv/opus)이
+#      i686-pc-windows-msvc 로 컴파일되고 '링크'까지 되는가?"
+#
+#   여기서 막히면 매장 등록/비밀번호/자동 업데이트를 아무리 잘 만들어도 소용이 없으므로,
+#   본 구현에 들어가기 전에 이 질문 하나만 싸게 확인한다.
+#
+# 수동 실행 전용(workflow_dispatch) — tag 빌드와 릴리스 파이프라인에 전혀 영향을 주지 않는다.
+#
+# 의도적으로 범위에서 뺀 것:
+#   - Flutter        : Windows 데스크톱이 x64 전용. 32비트 불가라는 것이 B안의 출발점이다.
+#   - sciter ui      : cli feature 로 제외. B안은 UI 없는 service 형태다.
+#   - hwcodec/ffmpeg : B안 최소 요구사항이 아니다. ffmpeg 의 x86 빌드는 느리고 실패 위험이
+#                      커서, 실패해도 정작 알고 싶은 것(코덱+캡처+링크)을 못 알려준다.
+#                      소프트웨어 인코딩으로 POS 화면에 충분한지는 별도 판단 사항.
+#
+# 참고 — 32비트 지원 흔적이 이미 코드에 남아 있다 (과거 sciter x86 빌드 라인):
+#   .cargo/config.toml       : [target.i686-pc-windows-msvc] rustflags 존재
+#   libs/scrap/build.rs      : target_arch == "x86" → vcpkg triplet 을 x86-windows-static 으로 치환
+#   flutter-build.yml        : build-for-windows-sciter 의 i686 항목 (주석 처리됨)
+name: PoC - Windows x86 (32bit) core build
+
+on:
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: "1.75"
+  LLVM_VERSION: "15.0.6"
+  # flutter-build.yml 과 동일한 vcpkg 고정 커밋 (포트 버전 일치시키기 위함)
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  CARGO_TARGET: i686-pc-windows-msvc
+  VCPKG_TRIPLET: x86-windows-static
+
+jobs:
+  poc-win32-core:
+    name: i686 core build
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain (i686 target)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+          components: "rustfmt"
+
+      # bindgen (scrap 의 vpx/aom/yuv FFI 생성) 이 libclang 을 요구한다
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: poc-win32
+          key: ${{ env.CARGO_TARGET }}
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies (x86-windows-static)
+        shell: bash
+        run: |
+          set -e
+          # classic 모드로 필요한 포트만 설치한다.
+          # 레포 루트에서 vcpkg 를 돌리면 루트의 vcpkg.json 때문에 manifest 모드가 켜지고
+          # ffmpeg/mfx-dispatch 까지 전부 빌드하려 든다 → $VCPKG_ROOT 로 이동해서 실행.
+          # RustDesk 는 aom/libvpx/libyuv/opus 를 패치해서 쓰므로 overlay-ports 는 필수다
+          # (빼먹으면 upstream 포트가 설치되어 링크 단계에서 엉뚱하게 깨진다).
+          OVERLAY="$(pwd)/res/vcpkg"
+          echo "overlay-ports: $OVERLAY"
+          ls "$OVERLAY"
+
+          cd "$VCPKG_ROOT"
+          if ! ./vcpkg install \
+                --triplet "${{ env.VCPKG_TRIPLET }}" \
+                --overlay-ports="$OVERLAY" \
+                libvpx aom libyuv opus libjpeg-turbo; then
+            echo "===== vcpkg 실패 — 빌드 로그 tail ====="
+            find "${VCPKG_ROOT}/buildtrees" -name "*-out.log" 2>/dev/null | while read -r f; do
+              echo "----- $f -----"
+              tail -n 60 "$f"
+            done
+            exit 1
+          fi
+          echo "===== 설치된 static lib ====="
+          ls -la "${VCPKG_ROOT}/installed/${{ env.VCPKG_TRIPLET }}/lib" || true
+
+      # ── PoC 본체 ──────────────────────────────────────────────────────────
+      # cli feature: sciter ui 와 flutter 를 모두 제외한다 (src/lib.rs 의 cfg 참고).
+      # 링크까지 수행하는 build 를 쓴다 — check 로는 x86 심볼/링커 문제를 못 잡는다.
+      - name: Build rustdesk core (i686, no UI)
+        shell: bash
+        run: |
+          set -e
+          cargo build --release --target "${{ env.CARGO_TARGET }}" --features cli
+          echo "===== 산출물 ====="
+          ls -la "target/${{ env.CARGO_TARGET }}/release/"*.exe
+
+      - name: Upload i686 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-win32-i686-binaries
+          path: target/${{ env.CARGO_TARGET }}/release/*.exe
+          if-no-files-found: warn
+
+      # ── 참고 정보 ─────────────────────────────────────────────────────────
+      # B안 실제 바이너리 형태는 "core_main 있음 + ui 없음" 이다. 그런데 현재 cfg 는
+      # cli feature 를 켜면 ui 와 core_main 이 함께 빠진다. 여기서는 CI 워크스페이스에서만
+      # core_main 의 cli 제외 조건을 떼고 컴파일이 되는지 본다 (커밋되는 패치 아님).
+      # 실패해도 PoC 결론 자체를 뒤집지는 않으므로 continue-on-error.
+      - name: (참고) core_main 포함 컴파일 확인
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          LINE=$(grep -n '^pub mod core_main;' src/lib.rs | cut -d: -f1)
+          if [ -z "$LINE" ]; then
+            echo "core_main 선언을 못 찾음 — lib.rs 구조가 바뀐 듯. 건너뜀"
+            exit 1
+          fi
+          CFG_LINE=$((LINE - 1))
+          echo "수정 전: $(sed -n "${CFG_LINE}p" src/lib.rs)"
+          sed -i "${CFG_LINE}s/, feature = \"cli\"//" src/lib.rs
+          echo "수정 후: $(sed -n "${CFG_LINE}p" src/lib.rs)"
+          cargo check --release --target "${{ env.CARGO_TARGET }}" --features cli
+
+      - name: 결과 요약
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Phase 0 PoC — Windows x86 (i686)"
+            echo ""
+            echo "| 항목 | 값 |"
+            echo "|---|---|"
+            echo "| target | \`${{ env.CARGO_TARGET }}\` |"
+            echo "| vcpkg triplet | \`${{ env.VCPKG_TRIPLET }}\` |"
+            echo "| features | \`cli\` (flutter/sciter/hwcodec 제외) |"
+            echo ""
+            echo "산출물이 생성됐다면 B안(경량 Rust agent) 진행 가능."
+            echo "vcpkg 단계에서 죽었으면 코덱 포트의 x86 문제, cargo 단계에서 죽었으면"
+            echo "RustDesk 본체/캡처 코드의 x86 문제 — 로그 위치가 판단 근거."
+          } >> "$GITHUB_STEP_SUMMARY"
