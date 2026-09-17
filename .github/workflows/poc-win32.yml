@@ -74,6 +74,10 @@ jobs:
         with:
           prefix-key: poc-win32
           key: ${{ env.CARGO_TARGET }}
+          # 실패해도 캐시를 저장한다. PoC 는 링크 단계까지 가야 답이 나오는데
+          # 기본값(false)이면 실패할 때마다 의존성 전체를 처음부터 다시 빌드해서
+          # 한 번 돌릴 때마다 50분씩 날아간다.
+          cache-on-failure: true
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -109,6 +113,68 @@ jobs:
           fi
           echo "===== 설치된 static lib ====="
           ls -la "${VCPKG_ROOT}/installed/${{ env.VCPKG_TRIPLET }}/lib" || true
+
+      # libsodium-sys 0.2.7 의 크로스컴파일 버그 우회.
+      #
+      # 증상: LNK4272 (library machine type 'x64' conflicts with target machine type 'x86')
+      #       + _sodium_* / _crypto_* / _randombytes_* 132개 unresolved external
+      #
+      # 원인: build.rs 의 get_lib_dir() 가 target_pointer_width 로 분기하는데,
+      #       빌드 스크립트 안의 cfg 는 TARGET 이 아니라 HOST 를 가리킨다. 러너가 x64 라
+      #       i686 타겟인데도 msvc/x64/Release/v142/libsodium.lib 를 집어온다.
+      #
+      # 해결: 크레이트가 32비트 lib 도 같이 배포한다 (msvc/Win32/Release/v142/libsodium.lib).
+      #       SODIUM_LIB_DIR 을 세우면 build.rs main() 이 find_libsodium_env() 로 빠져서
+      #       버그가 있는 get_lib_dir() 를 아예 타지 않는다. 바인딩은 src/sodium_bindings.rs
+      #       로 사전 생성돼 있어 헤더도 필요 없다.
+      #
+      # 주의: SODIUM_STATIC 은 절대 세우지 말 것 (build.rs 가 panic 한다).
+      #       SODIUM_SHARED 도 세우지 않는다 - 미설정이 곧 static 링크다.
+      #       SODIUM_USE_PKG_CONFIG 과 병용해도 panic 한다.
+      - name: Prepare 32-bit libsodium
+        shell: bash
+        run: |
+          set -e
+          # Cargo.lock 의 libsodium-sys 버전과 반드시 일치시킬 것.
+          # 어긋나면 사전 생성 바인딩과 lib 의 ABI 가 안 맞는다.
+          VER=0.2.7
+          LOCKED=$(grep -A1 'name = "libsodium-sys"' Cargo.lock | grep '^version' | cut -d'"' -f2)
+          echo "Cargo.lock=$LOCKED  workflow=$VER"
+          if [ "$LOCKED" != "$VER" ]; then
+            echo "FATAL: 버전 불일치. Cargo.lock 을 확인하고 이 워크플로우의 VER 을 맞출 것"
+            exit 1
+          fi
+
+          # 레포 밖 임시 디렉터리에서 작업한다. 루트에 Cargo.toml 이 든 디렉터리를 풀면
+          # cargo 워크스페이스와 엮일 여지가 있어서 아예 피한다.
+          WORK=$(mktemp -d)
+          cd "$WORK"
+
+          curl -sSL --fail -o libsodium-sys.crate "https://static.crates.io/crates/libsodium-sys/libsodium-sys-${VER}.crate"
+          tar xzf libsodium-sys.crate
+
+          SRC="libsodium-sys-${VER}/msvc/Win32/Release/v142/libsodium.lib"
+          if [ ! -f "$SRC" ]; then
+            echo "FATAL: 32비트 libsodium.lib 를 못 찾음. 크레이트 구조가 바뀐 듯:"
+            find "libsodium-sys-${VER}/msvc" -name '*.lib'
+            exit 1
+          fi
+
+          mkdir -p sodium-x86
+          cp "$SRC" sodium-x86/
+          ls -la sodium-x86/
+
+          # x86 검증: cdecl 언더스코어 심볼이 있어야 한다. x64 lib 에는 없다.
+          if ! grep -aq '_sodium_init' sodium-x86/libsodium.lib; then
+            echo "FATAL: 이 lib 에 _sodium_init (x86 cdecl) 심볼이 없다 - 32비트가 아님"
+            exit 1
+          fi
+          echo "x86 확인됨 (_sodium_init 심볼 존재)"
+
+          # MSVC 링커는 MSYS 경로(/tmp/...)를 못 읽는다. cygpath -m 으로 드라이브 경로 변환.
+          SODIUM_DIR=$(cygpath -m "$WORK/sodium-x86")
+          echo "SODIUM_LIB_DIR=$SODIUM_DIR"
+          echo "SODIUM_LIB_DIR=$SODIUM_DIR" >> "$GITHUB_ENV"
 
       # ── PoC 본체 ──────────────────────────────────────────────────────────
       # cube_headless feature 로 빌드한다 — B안이 실제로 만들 바로 그 형태다.
