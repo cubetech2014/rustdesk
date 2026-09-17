@@ -1072,16 +1072,31 @@ fn _map_keyboard_mode(_peer: &str, event: &Event, mut key_event: KeyEvent) -> Op
         _ => return None,
     };
 
+    // 한/영 키만 Legacy 경로로 보낸다.
+    //
+    // agent 의 Map 모드 처리는 sim_rdev_rawkey_position (스캔코드 주입) 하나뿐이라
+    // (input_service.rs map_keyboard_mode) 가상키를 보낼 수단이 없고, 한/영 키는
+    // 스캔코드로 주입하면 원격 IME 토글이 걸리지 않는다. 반면 Legacy 경로의
+    // ControlKey::Hangul 은 agent 가 enigo 로 VK_HANGUL(0x15)을 주입해서 토글이
+    // 실제로 동작하는 것이 확인됐다.
+    //
+    // agent 는 키 이벤트마다 evt.mode 를 보고 분기하므로(input_service.rs handle_key_),
+    // 이 키 하나만 mode=Legacy 로 보내면 된다. 나머지 글자키는 Map(스캔코드) 그대로라
+    // 원격 IME 가 정상적으로 한글을 조합한다.
+    #[cfg(target_os = "windows")]
+    let is_hangul_key = event.platform_code == HANGUL_WIN_VK;
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let is_hangul_key = event.usb_hid == 0x90;
+    #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
+    let is_hangul_key = false;
+    if is_hangul_key && _peer == OS_LOWER_WINDOWS {
+        key_event.mode = KeyboardMode::Legacy.into();
+        key_event.set_control_key(ControlKey::Hangul);
+        return Some(key_event);
+    }
+
     #[cfg(target_os = "windows")]
     let keycode = match _peer {
-        // 한/영 키(VK_HANGUL)는 스캔코드로 주입하면 원격 IME 토글이 걸리지 않는다.
-        // Legacy 모드가 토글에 성공하는 이유가 ControlKey::Hangul -> 가상키(VK) 주입이기
-        // 때문. Map 모드에서도 이 키만 상위 워드에 VK 를 실어 보내면 agent 가 가상키로
-        // 주입한다 (input_service.rs translate_process_code -> sim_rdev_rawkey_virtual).
-        // 나머지 글자키는 그대로 스캔코드로 가야 원격 IME 가 한글을 조합할 수 있다.
-        OS_LOWER_WINDOWS if event.platform_code == HANGUL_WIN_VK => {
-            (HANGUL_WIN_VK << 16) | HANGUL_WIN_SCANCODE
-        }
         OS_LOWER_WINDOWS => {
             // https://github.com/rustdesk/rustdesk/issues/1371
             // Filter scancodes that are greater than 255 and the height word is not 0xE0.
@@ -1122,11 +1137,6 @@ fn _map_keyboard_mode(_peer: &str, event: &Event, mut key_event: KeyEvent) -> Op
     };
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let keycode = match _peer {
-        // 한/영 키는 스캔코드로 주입하면 원격 IME 토글이 안 걸린다. 상위 워드에 VK 를
-        // 실어 보내 agent 가 가상키로 주입하게 한다 (Windows 송신 경로와 동일한 처리).
-        OS_LOWER_WINDOWS if event.usb_hid == 0x90 => {
-            ((HANGUL_WIN_VK << 16) | HANGUL_WIN_SCANCODE) as _
-        }
         OS_LOWER_WINDOWS => rdev::usb_hid_code_to_win_scancode(event.usb_hid as _)?,
         OS_LOWER_LINUX => rdev::usb_hid_code_to_linux_code(event.usb_hid as _)?,
         OS_LOWER_MACOS => {
