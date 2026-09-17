@@ -600,6 +600,8 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         // Flutter 빌드에서는 Dart 가 담당하므로 cube_headless 에서만 spawn.
         #[cfg(all(target_os = "windows", feature = "cube_headless"))]
         tokio::spawn(crate::cuberemote_agent::run());
+        #[cfg(all(target_os = "windows", feature = "cube_headless"))]
+        tokio::spawn(crate::cuberemote_update::run());
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {
                 log::error!("Failed to start ipc: {}", err);

@@ -36,7 +36,7 @@ const PASSWORD_CHARS: &[u8] = b"abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXY
 // 빌드 tag. CI 가 CUBE_TAG 를 넘기면 그 값, 아니면 "dev".
 // Flutter 빌드는 apply.sh 가 config.dart 의 AGENT_VERSION 을 sed 로 갱신하지만
 // headless 에는 Dart 가 없으므로 컴파일 타임 env 로 받는다.
-fn agent_version() -> String {
+pub fn agent_version() -> String {
     option_env!("CUBE_TAG").unwrap_or("dev").to_string()
 }
 

@@ -39,6 +39,10 @@ pub mod cuberemote_heartbeat;
 // cube_headless 에서만 필요하다.
 #[cfg(all(target_os = "windows", feature = "cube_headless"))]
 pub mod cuberemote_agent;
+// CubeRemote: headless 자동 업데이트. Flutter 빌드의 update_service.dart 대응.
+// UI 가 없으므로 다이얼로그 없이, 원격 세션이 없을 때만 조용히 설치한다.
+#[cfg(all(target_os = "windows", feature = "cube_headless"))]
+pub mod cuberemote_update;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 mod bridge_generated;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
