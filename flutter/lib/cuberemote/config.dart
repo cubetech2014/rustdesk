@@ -1,4 +1,4 @@
-// CubeRemote 서버 설정 (apply.sh 가 API_BASE / FLAVOR / AGENT_VERSION 을 빌드 시 주입)
+// CubeRemote 서버 설정 (apply.sh 가 API_BASE / FLAVOR / AGENT_VERSION / ABI 를 빌드 시 주입)
 library cuberemote_config;
 
 const API_BASE = "https://remote.cube-tech.co.kr/api/cuberemote";
@@ -7,6 +7,14 @@ const AGENT_VERSION = "1.0.0";
 
 // 빌드 flavor: agent (POS) / viewer (관리자) / support (1회용 고객 지원)
 const FLAVOR = String.fromEnvironment("CUBE_FLAVOR", defaultValue: "agent");
+
+// 빌드 대상 CPU 아키텍처 — apply.sh 가 CUBE_ABI env 로 hardcode.
+//   Android: arm64 / armv7,  Windows: x64 / x86
+// 자동 업데이트 조회 시 서버가 같은 arch 의 설치 파일 URL 을 주도록 하는 키.
+// 이게 없으면 32비트 기기가 arm64 APK 를 받아 "앱이 설치되지 않았습니다" 로 끝남.
+// 빈 문자열이면 arch 를 안 보냄 → 서버가 플랫폼 기본값 (Android=arm64 / Windows=x64)
+// 으로 처리. v1.0.40 이하 배포본과 동일한 동작이라 하위호환 유지됨.
+const ABI = "";
 
 bool get isAgentFlavor   => FLAVOR == "agent";
 bool get isViewerFlavor  => FLAVOR == "viewer";

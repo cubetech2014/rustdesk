@@ -39,14 +39,18 @@ class ApiClient {
     }
   }
 
+  /// [arch] 는 빌드 ABI (arm64 / armv7 / x64 / x86). 비우면 파라미터 자체를 생략해서
+  /// 서버가 플랫폼 기본값으로 응답 — 구버전 클라이언트와 같은 동작.
   static Future<Map<String, dynamic>?> checkUpdate(
-      String platform, String currentVersion, String flavor) async {
+      String platform, String currentVersion, String flavor,
+      {String arch = ''}) async {
     try {
       final uri = Uri.parse('$API_BASE/check_update.php').replace(
         queryParameters: {
           'platform': platform,
           'version': currentVersion,
           'flavor': flavor,
+          if (arch.isNotEmpty) 'arch': arch,
         },
       );
       final resp = await _client.get(uri).timeout(_timeout);

@@ -33,14 +33,20 @@ case "$FLAVOR" in
 esac
 echo "FLAVOR=$FLAVOR  APP_NAME=$APP_NAME_NEW  conn-type=$HARD_CONN_TYPE"
 
-# === config.dart FLAVOR + AGENT_VERSION 빌드 시점 hardcode ===
+# === config.dart FLAVOR + AGENT_VERSION + ABI 빌드 시점 hardcode ===
 # (dart-define 대신 직접 sed — Windows build.py 가 인자 통과 안 시켜서 일관성 위해)
+#
+# CUBE_ABI 는 워크플로우가 job 별로 넘김 (arm64 / armv7 / x64).
+# 안 넘어오면 빈 문자열 유지 → 클라이언트가 check_update 에 arch 를 안 보내고
+# 서버가 플랫폼 기본값으로 응답. 로컬 수동 빌드에서 잘못된 arch 가 박히는 것보다 안전.
 CUBE_TAG_VAL="${CUBE_TAG:-dev}"
+CUBE_ABI_VAL="${CUBE_ABI:-}"
 CONFIG_DART="flutter/lib/cuberemote/config.dart"
 if [ -f "$CONFIG_DART" ]; then
     sed -i "s|^const AGENT_VERSION = .*|const AGENT_VERSION = \"$CUBE_TAG_VAL\";|" "$CONFIG_DART"
     sed -i "s|^const FLAVOR = .*|const FLAVOR = \"$FLAVOR\";|" "$CONFIG_DART"
-    echo "AGENT_VERSION=$CUBE_TAG_VAL  FLAVOR=$FLAVOR (hardcoded into config.dart)"
+    sed -i "s|^const ABI = .*|const ABI = \"$CUBE_ABI_VAL\";|" "$CONFIG_DART"
+    echo "AGENT_VERSION=$CUBE_TAG_VAL  FLAVOR=$FLAVOR  ABI=${CUBE_ABI_VAL:-<platform default>} (hardcoded into config.dart)"
 fi
 
 # === 권한 강제 (submodule 권한 이슈 우회) ===
@@ -722,6 +728,7 @@ check "settings 메뉴"  "$SETTINGS_DART" "cuberemote/settings_tile"
 check "채팅 탭 제거"   "$HOME_DART"   "ChatPage removed"
 check "settings hide" "$SETTINGS_DART" "// CubeRemote: hidden RustDesk sections"
 check "FLAVOR hardcode" "$CONFIG_DART" "const FLAVOR = \"$FLAVOR\";"
+check "ABI hardcode"   "$CONFIG_DART" "const ABI = \"$CUBE_ABI_VAL\";"
 check "MSI installer 브랜딩" "$PREPROCESS_PY" "default=\"$APP_NAME_NEW\""
 check "Desktop 사이드바"  "$DESKTOP_HOME" "CubeRemoteDesktopSection"
 # [13d] MSI 인스톨러 체크박스 정리 (프린터 전 flavor / 바탕화면 agent 만)

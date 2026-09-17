@@ -111,6 +111,7 @@ jobs:
         env:
           CUBE_FLAVOR: ${{ matrix.job.flavor }}
           CUBE_TAG: ${{ inputs.upload-tag }}
+          CUBE_ABI: x64
         run: bash patches/apply.sh
 
       - name: Restore bridge files
@@ -845,27 +846,45 @@ jobs:
 # 
   build-rustdesk-android:
     needs: [generate-bridge]
-    name: build rustdesk android apk ${{ matrix.job.flavor }} ${{ matrix.job.target }}
+    name: build rustdesk android apk ${{ matrix.job.flavor }} ${{ matrix.job.abi }}
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
       matrix:
+        # abi      : check_update.php 로 보낼 arch 키 (config.dart 의 ABI 상수)
+        # fsuffix  : 산출물 파일명 접미사. arm64 는 빈 값 — 기존 파일명/mirror/업데이트 URL
+        #            을 그대로 유지하기 위함. armv7 만 "-armv7" 로 구분한다.
+        #
+        # armv7 은 agent 만 빌드한다. viewer 는 관리자 본인 기기라 64비트를 쓰면 되고,
+        # 32비트 viewer 를 넣으면 릴리스마다 mirror 파일 + 버전 등록 row 가 하나씩 늘어난다.
+        # 되살리려면 아래에 flavor: viewer / abi: armv7 항목을 추가하면 끝.
         job:
           - {
               arch: aarch64,
               target: aarch64-linux-android,
               os: ubuntu-24.04,
               reltype: release,
-              suffix: "-agent",
               flavor: agent,
+              abi: arm64,
+              fsuffix: "",
             }
           - {
               arch: aarch64,
               target: aarch64-linux-android,
               os: ubuntu-24.04,
               reltype: release,
-              suffix: "-viewer",
               flavor: viewer,
+              abi: arm64,
+              fsuffix: "",
+            }
+          - {
+              arch: armv7,
+              target: armv7-linux-androideabi,
+              os: ubuntu-24.04,
+              reltype: release,
+              flavor: agent,
+              abi: armv7,
+              fsuffix: "-armv7",
             }
     steps:
       - name: Free Disk Space (Ubuntu)
@@ -931,6 +950,7 @@ jobs:
         env:
           CUBE_FLAVOR: ${{ matrix.job.flavor }}
           CUBE_TAG: ${{ inputs.upload-tag }}
+          CUBE_ABI: ${{ matrix.job.abi }}
         run: bash patches/apply.sh
       - name: Install flutter
         uses: subosito/flutter-action@v2
@@ -1055,7 +1075,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --dart-define=CUBE_FLAVOR=${{ matrix.job.flavor }} --target-platform android-arm64 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-arm64-v8a-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+              mv build/app/outputs/flutter-apk/app-arm64-v8a-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
             ;;
             armv7-linux-androideabi)
               mkdir -p ./flutter/android/app/src/main/jniLibs/armeabi-v7a
@@ -1064,7 +1084,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --dart-define=CUBE_FLAVOR=${{ matrix.job.flavor }} --target-platform android-arm --split-per-abi
-              mv build/app/outputs/flutter-apk/app-armeabi-v7a-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+              mv build/app/outputs/flutter-apk/app-armeabi-v7a-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
             ;;
             x86_64-linux-android)
               mkdir -p ./flutter/android/app/src/main/jniLibs/x86_64
@@ -1073,7 +1093,7 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --dart-define=CUBE_FLAVOR=${{ matrix.job.flavor }} --target-platform android-x64 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-x86_64-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+              mv build/app/outputs/flutter-apk/app-x86_64-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
             ;;
             i686-linux-android)
               mkdir -p ./flutter/android/app/src/main/jniLibs/x86
@@ -1082,12 +1102,12 @@ jobs:
               # build flutter
               pushd flutter
               flutter build apk "--${{ matrix.job.reltype }}" --dart-define=CUBE_FLAVOR=${{ matrix.job.flavor }} --target-platform android-x86 --split-per-abi
-              mv build/app/outputs/flutter-apk/app-x86-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+              mv build/app/outputs/flutter-apk/app-x86-${{ matrix.job.reltype }}.apk ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
             ;;
           esac
           popd
           mkdir -p signed-apk; pushd signed-apk
-          mv ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk .
+          mv ../cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk .
 
       # https://github.com/r0adkll/sign-android-release/issues/84#issuecomment-1889636075
       - name: Setup sign tool version variable
@@ -1116,15 +1136,15 @@ jobs:
         shell: bash
         run: |
           SRC="${{steps.sign-rustdesk.outputs.signedReleaseFile}}"
-          DST="signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk"
+          DST="signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk"
           mv "$SRC" "$DST"
 
       - name: Upload Artifacts
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
         uses: actions/upload-artifact@master
         with:
-          name: cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
-          path: signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+          name: cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
+          path: signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
 
       - name: Publish signed apk package
         if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
@@ -1133,7 +1153,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+            signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
 
       - name: Publish unsigned apk package
         if: env.ANDROID_SIGNING_KEY == null && env.UPLOAD_ARTIFACT == 'true'
@@ -1142,7 +1162,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}.apk
+            signed-apk/cuberemote-${{ inputs.upload-tag }}-${{ matrix.job.flavor }}${{ matrix.job.fsuffix }}.apk
 
 # DISABLED:   build-rustdesk-android-universal:
 #     needs: [build-rustdesk-android]

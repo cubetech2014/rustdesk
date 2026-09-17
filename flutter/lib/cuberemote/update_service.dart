@@ -47,7 +47,9 @@ class UpdateService {
   static Future<UpdateInfo?> _checkAndStore() async {
     try {
       final platform = DeviceInfoHelper.platform;
-      final result = await ApiClient.checkUpdate(platform, AGENT_VERSION, FLAVOR);
+      // v1.0.41: ABI 동봉 — 32비트 기기가 arm64 설치 파일을 받아 설치 실패하는 것 방지
+      final result =
+          await ApiClient.checkUpdate(platform, AGENT_VERSION, FLAVOR, arch: ABI);
       final prefs = await SharedPreferences.getInstance();
       if (result == null || result['update'] != true) {
         await prefs.remove(PREF_UPDATE_URL);
