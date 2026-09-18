@@ -86,7 +86,11 @@ impl ProgressWindow {
             RegisterClassW(&wc);
 
             // 크기 조절도 최대화도 필요 없다. 제목줄 + 닫기만.
-            let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+            //
+            // WS_CLIPCHILDREN 이 중요하다. 이게 없으면 부모 창이 자식 컨트롤이
+            // 덮고 있는 영역까지 배경을 칠한 뒤 자식이 그 위에 다시 그린다.
+            // 갱신이 잦을수록 그 순간이 깜빡임으로 보인다.
+            let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN;
             let hwnd = CreateWindowExW(
                 0,
                 class_name.as_ptr(),

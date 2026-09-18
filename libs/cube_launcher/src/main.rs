@@ -270,6 +270,11 @@ fn download(
     let mut file = std::fs::File::create(&path).map_err(|e| format!("파일 저장 실패: {}", e))?;
     let mut buf = vec![0u8; 64 * 1024];
     let mut done: u64 = 0;
+    // 화면에 보이는 값이 실제로 바뀔 때만 다시 그린다.
+    // 청크마다 갱신하면 24MB 에 380번을 그리게 되고, STATIC 컨트롤은 이중
+    // 버퍼링이 없어서 그게 깜빡임으로 보인다.
+    // 전체 크기를 아는 경우는 퍼센트(최대 101회), 모르면 1MB 단위로 센다.
+    let mut last_tick = u64::MAX;
 
     loop {
         let n = resp
@@ -283,19 +288,27 @@ fn download(
         done += n as u64;
 
         if let Some(w) = win {
-            match total {
-                Some(t) if t > 0 => {
-                    w.set_progress(((done * 100) / t) as u32);
-                    w.set_text(&format!(
-                        "내려받는 중...  {:.1} / {:.1} MB",
-                        done as f64 / 1048576.0,
-                        t as f64 / 1048576.0
-                    ));
+            let tick = match total {
+                Some(t) if t > 0 => (done * 100) / t,
+                _ => done / 1048576,
+            };
+            if tick != last_tick {
+                last_tick = tick;
+                match total {
+                    Some(t) if t > 0 => {
+                        w.set_progress(tick as u32);
+                        w.set_text(&format!(
+                            "내려받는 중...  {:.1} / {:.1} MB",
+                            done as f64 / 1048576.0,
+                            t as f64 / 1048576.0
+                        ));
+                    }
+                    // Content-Length 가 없는 경우. 받은 양만 보여준다.
+                    _ => w.set_text(&format!("내려받는 중...  {:.1} MB", done as f64 / 1048576.0)),
                 }
-                // Content-Length 가 없는 경우. 받은 양만 보여준다.
-                _ => w.set_text(&format!("내려받는 중...  {:.1} MB", done as f64 / 1048576.0)),
             }
-            // 이걸 빼먹으면 창이 "응답 없음" 으로 하얗게 변한다.
+            // 갱신을 건너뛴 때도 불러야 한다. 이걸 빼먹으면 창이 "응답 없음" 으로
+            // 하얗게 변한다.
             w.pump();
         }
     }
