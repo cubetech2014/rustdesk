@@ -28,8 +28,10 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
         with:
-          # 런처는 submodule 을 안 쓴다. 받지 않으면 checkout 이 훨씬 빠르다.
-          submodules: false
+          # 런처 코드 자체는 submodule 을 안 쓰지만, cargo 는 -p 로 한 패키지만
+          # 빌드해도 워크스페이스 전 멤버의 manifest 를 읽는다. libs/scrap 이
+          # hbb_common(서브모듈)을 참조하므로 그게 없으면 로드 단계에서 죽는다.
+          submodules: recursive
 
       - name: Install Rust toolchain (i686 target)
         uses: dtolnay/rust-toolchain@v1
