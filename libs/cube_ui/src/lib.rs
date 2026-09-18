@@ -6,8 +6,10 @@
 // 여기 있는 것은 "동작에 꼭 필요한 최소한" 이다. 보기 좋게 만드는 것보다
 // 어떤 Windows 에서도 똑같이 뜨는 것을 우선했다.
 //
-// 지금은 진행률 창(런처)만 있다. support x86 의 ID/비밀번호 표시 창이 뒤따르고,
-// 그때 이 파일의 창 생성 / 메시지 루프를 공유한다.
+// 두 가지가 있다:
+//   ProgressWindow  런처의 다운로드 진행률
+//   SupportWindow   support x86 의 ID / 임시 비밀번호 표시
+// 창 생성과 메시지 루프를 공유한다.
 //
 // 장비 등록 입력 폼도 한 번 만들었다가 지웠다 (커밋 fa0d7cf30). 32비트 agent 를
 // 만들지 않기로 하면서 쓸 곳이 없어졌다. 필요해지면 그 커밋에서 되살리면 된다.
@@ -218,4 +220,192 @@ impl Drop for ProgressWindow {
             }
         }
     }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// 1회용 원격지원 표시 창 (support x86)
+//
+// 고객이 화면의 ID 와 비밀번호를 읽어 상담원에게 불러주는 것이 이 창의 전부다.
+// 그래서 support 는 UI 를 버릴 수 없었고, headless 코어 위에 이 창만 얹는다.
+//
+// ID 는 서버에 접속해야 발급되므로 창이 뜬 직후에는 비어 있다. 호출자가
+// 주기적으로 set_info 와 pump 를 부르며 채워 넣는 구조다 (ProgressWindow 와 동일).
+//
+// 창을 닫으면 지원이 끝난다. is_closed() 가 true 가 되면 호출자가 프로세스를
+// 종료하면 된다.
+// ─────────────────────────────────────────────────────────────────────────
+
+// 창이 닫혔는지. 이 창도 프로세스당 하나, 메인 스레드 전용이라 thread_local 로 충분하다.
+thread_local! {
+    static SUPPORT_CLOSED: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
+/// STATIC 라벨 하나를 만든다.
+///
+/// 클로저로 쓰지 않는 이유: unsafe 블록이 클로저 본문까지 덮는지가 한눈에
+/// 분명하지 않다. 로컬에서 컴파일해볼 수 없는 상황이라 모호한 쪽을 피했다.
+unsafe fn static_label(
+    parent: HWND,
+    hinst: winapi::shared::minwindef::HINSTANCE,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+) -> HWND {
+    let h = CreateWindowExW(
+        0,
+        wide("STATIC").as_ptr(),
+        wide(text).as_ptr(),
+        WS_CHILD | WS_VISIBLE,
+        x,
+        y,
+        w,
+        24,
+        parent,
+        null_mut(),
+        hinst,
+        null_mut(),
+    );
+    apply_default_font(h);
+    h
+}
+
+unsafe extern "system" fn support_proc(
+    hwnd: HWND,
+    msg: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_CLOSE => {
+            // 진행률 창과 반대로 닫기가 정상 경로다. 닫으면 지원 종료다.
+            SUPPORT_CLOSED.with(|c| c.set(true));
+            DestroyWindow(hwnd);
+            0
+        }
+        WM_DESTROY => {
+            SUPPORT_CLOSED.with(|c| c.set(true));
+            PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+/// ID / 비밀번호를 보여주는 창.
+pub struct SupportWindow {
+    hwnd: HWND,
+    id_value: HWND,
+    pw_value: HWND,
+}
+
+impl SupportWindow {
+    pub fn new() -> Option<Self> {
+        unsafe {
+            SUPPORT_CLOSED.with(|c| c.set(false));
+
+            let hinst = GetModuleHandleW(null_mut());
+            let class_name = wide("CubeRemoteSupport");
+
+            let mut wc: WNDCLASSW = std::mem::zeroed();
+            wc.lpfnWndProc = Some(support_proc);
+            wc.hInstance = hinst;
+            wc.hCursor = LoadCursorW(null_mut(), IDC_ARROW);
+            wc.hbrBackground = (COLOR_BTNFACE + 1) as HBRUSH;
+            wc.lpszClassName = class_name.as_ptr();
+            RegisterClassW(&wc);
+
+            let hwnd = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                wide("CubeRemote 원격지원").as_ptr(),
+                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                420,
+                250,
+                null_mut(),
+                null_mut(),
+                hinst,
+                null_mut(),
+            );
+            if hwnd.is_null() {
+                return None;
+            }
+
+            static_label(hwnd, hinst, "아래 두 가지를 상담원에게 알려주세요.", 18, 16, 380);
+            static_label(hwnd, hinst, "ID", 18, 62, 80);
+            let id_value = static_label(hwnd, hinst, "발급 중...", 110, 62, 280);
+            static_label(hwnd, hinst, "비밀번호", 18, 96, 80);
+            let pw_value = static_label(hwnd, hinst, "", 110, 96, 280);
+            static_label(hwnd, hinst, "이 창을 닫으면 원격지원이 종료됩니다.", 18, 150, 380);
+
+            ShowWindow(hwnd, SW_SHOWNORMAL);
+            UpdateWindow(hwnd);
+
+            let w = SupportWindow {
+                hwnd,
+                id_value,
+                pw_value,
+            };
+            w.pump();
+            Some(w)
+        }
+    }
+
+    /// 화면의 값을 갱신한다. 같은 값이면 아무것도 하지 않는다 -
+    /// 불필요한 다시 그리기가 깜빡임이 된다 (진행률 창에서 겪었다).
+    pub fn set_info(&self, id: &str, password: &str) {
+        unsafe {
+            set_text_if_changed(self.id_value, id);
+            set_text_if_changed(self.pw_value, password);
+        }
+    }
+
+    pub fn pump(&self) {
+        unsafe {
+            let mut msg: MSG = std::mem::zeroed();
+            while PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    /// 사용자가 창을 닫았는가. true 면 호출자가 프로세스를 끝내면 된다.
+    pub fn is_closed(&self) -> bool {
+        SUPPORT_CLOSED.with(|c| c.get())
+    }
+}
+
+impl Drop for SupportWindow {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.hwnd.is_null() && !self.is_closed() {
+                DestroyWindow(self.hwnd);
+            }
+        }
+    }
+}
+
+/// 값이 실제로 바뀔 때만 SetWindowTextW 를 부른다.
+unsafe fn set_text_if_changed(hwnd: HWND, text: &str) {
+    if hwnd.is_null() {
+        return;
+    }
+    let len = GetWindowTextLengthW(hwnd);
+    if len >= 0 {
+        let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
+        let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+        let cur = if n > 0 {
+            String::from_utf16_lossy(&buf[..n as usize])
+        } else {
+            String::new()
+        };
+        if cur == text {
+            return;
+        }
+    }
+    SetWindowTextW(hwnd, wide(text).as_ptr());
 }
