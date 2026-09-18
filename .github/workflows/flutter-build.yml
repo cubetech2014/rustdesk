@@ -458,17 +458,19 @@ jobs:
       # (CustomActions 는 C++ 이라 Win32 로 매핑된다).
       # preprocess.py 는 apply.sh 가 이미 CubeRemote 로 브랜딩했고, dist 폴더의
       # rustdesk.exe 를 실행해 버전을 읽는다 (x64 러너에서 WOW64 로 동작).
+      # shell 을 지정하지 않는다 = Windows 러너 기본 PowerShell.
+      # 위의 x64 "Build msi" 스텝과 똑같은 형태여야 한다 - bash 로 바꾸면
+      # setup-msbuild 가 넣은 PATH 가 안 잡혀서 'msbuild: command not found' 가 난다
+      # (v1.0.42 에서 실제로 여기서 깨졌다).
       - name: Build msi (x86)
-        shell: bash
         run: |
-          set -e
           mkdir -p ./SignOutput
-          cd ./res/msi
+          pushd ./res/msi
           python preprocess.py --arp -d ../../rustdesk
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x86 /p:TargetVersion=Windows10
+          Get-ChildItem ./Package/bin -Recurse -Filter *.msi
           mv ./Package/bin/x86/Release/en-us/Package.msi ../../SignOutput/cuberemote-${{ inputs.upload-tag }}-agent-x86.msi
-          sha256sum ../../SignOutput/cuberemote-*.msi
 
       - name: Sign msi
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != '-2'
