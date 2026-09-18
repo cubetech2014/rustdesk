@@ -347,8 +347,14 @@ jobs:
           set -e
           cargo build --release --target i686-pc-windows-msvc -p cube_launcher
           mkdir -p ./SignOutput
+          # 파일명에 버전을 넣지 않는다.
+          # 런처는 실행 시점에 서버에서 최신을 물어보므로 내용이 버전과 무관하고,
+          # 거의 바뀌지 않는다. 이름이 고정이어야:
+          #   - 메일/문서에 영구 링크를 쓸 수 있고
+          #   - SmartScreen 평판과 백신 오탐 신고 결과가 유지된다
+          #     (파일이 매번 바뀌면 평판이 계속 리셋된다)
           cp ./target/i686-pc-windows-msvc/release/cuberemote.exe \
-             "./SignOutput/cuberemote-${{ inputs.upload-tag }}-setup.exe"
+             "./SignOutput/cuberemote-setup.exe"
           ls -la ./SignOutput/
 
       - name: Sign launcher
@@ -364,7 +370,7 @@ jobs:
           prerelease: true
           tag_name: ${{ env.TAG_NAME }}
           files: |
-            ./SignOutput/cuberemote-${{ inputs.upload-tag }}-setup.exe
+            ./SignOutput/cuberemote-setup.exe
 
   # 32비트 Windows POS 용 agent (B안). Flutter Windows 데스크톱이 x64 전용이라
   # 32비트에는 기존 agent 를 설치할 수 없어서, UI 없는 headless 빌드로 대체한다.

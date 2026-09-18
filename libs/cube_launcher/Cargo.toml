@@ -13,6 +13,15 @@ description = "CubeRemote 런처 - 원격지원을 받는 사용자에게 주는
 name = "cuberemote"
 path = "src/main.rs"
 
+# 실행파일 버전 정보. 메타데이터가 비어 있는 exe 는 백신 휴리스틱에서
+# 더 의심받는다. 코드 서명 인증서가 없는 동안 할 수 있는 최소한의 조치.
+[package.metadata.winres]
+LegalCopyright = "Copyright (c) 2026 CubeTech. All rights reserved."
+CompanyName = "CubeTech"
+ProductName = "CubeRemote"
+FileDescription = "CubeRemote 원격지원 도우미"
+OriginalFilename = "cuberemote-setup.exe"
+
 [dependencies]
 # rustdesk 본체와 같은 버전을 쓴다 (워크스페이스 Cargo.lock 공유).
 # blocking 을 쓰는 이유: 런처는 단순 순차 흐름이라 async 런타임이 불필요하다.
@@ -27,9 +36,17 @@ serde_json = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = [
-    "winuser",      # MessageBoxW
+    "winuser",      # MessageBoxW (폴백)
+    "commctrl",     # TaskDialogIndirect (명령 링크 UI)
     "shellapi",     # ShellExecuteW (msiexec 승격 실행)
     "sysinfoapi",   # GetNativeSystemInfo (OS 아키텍처 판별)
     "winnt",
     "minwindef",
+    "windef",
 ] }
+
+[build-dependencies]
+# 아이콘 + 매니페스트 임베드. 매니페스트는 선택이 아니라 필수다 -
+# Common Controls 6.0 선언이 없으면 TaskDialogIndirect import 가 풀리지 않아
+# 실행파일이 아예 로드되지 않는다. build.rs 주석 참고.
+winres = "0.1"
