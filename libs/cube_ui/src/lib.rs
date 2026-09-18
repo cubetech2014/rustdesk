@@ -11,8 +11,8 @@
 #![cfg(windows)]
 
 use std::ptr::null_mut;
-use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
-use winapi::shared::windef::{HBRUSH, HFONT, HWND};
+use winapi::shared::minwindef::{HINSTANCE, LPARAM, LRESULT, UINT, WPARAM};
+use winapi::shared::windef::{HBRUSH, HFONT, HMENU, HWND};
 use winapi::um::libloaderapi::GetModuleHandleW;
 use winapi::um::wingdi::{GetStockObject, DEFAULT_GUI_FONT};
 use winapi::um::winuser::*;
@@ -214,5 +214,265 @@ impl Drop for ProgressWindow {
                 DispatchMessageW(&msg);
             }
         }
+    }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// 장비 등록 입력 폼
+//
+// headless agent(32비트 Windows)에는 Flutter 등록 화면이 없다. 그 자리를 메운다.
+//
+// 서비스(SYSTEM)는 세션 0 격리 때문에 사용자에게 창을 못 띄운다. 그래서 이 창은
+// 서비스가 아니라 사용자 세션에서 `rustdesk.exe --cube-register` 로 따로 띄운다.
+// 런처가 MSI 설치 직후 그 명령을 실행하는 구조다.
+//
+// 입력은 두 개뿐이다. 매장명 / 대리점 / 본사는 verify_shop.php 응답에서 서버가
+// 채워주므로 현장에서 칠 이유가 없다. 오타 여지를 줄이는 쪽이 낫다.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 등록 폼이 돌려주는 값.
+pub struct RegisterInput {
+    pub shop_id: String,
+    pub device_nm: String,
+}
+
+const ID_SHOP: i32 = 201;
+const ID_NAME: i32 = 202;
+const ID_OK: i32 = 203;
+const ID_CANCEL: i32 = 204;
+
+struct FormState {
+    edit_shop: HWND,
+    edit_name: HWND,
+    result: Option<RegisterInput>,
+}
+
+// 이 폼은 프로세스당 한 번, 메인 스레드에서만 뜬다. 그래서 창 핸들에 포인터를
+// 매달지 않고 thread_local 로 상태를 들고 있어도 안전하고, 그 편이 훨씬 단순하다.
+thread_local! {
+    static FORM: std::cell::RefCell<Option<FormState>> = std::cell::RefCell::new(None);
+}
+
+unsafe fn read_text(hwnd: HWND) -> String {
+    let len = GetWindowTextLengthW(hwnd);
+    if len <= 0 {
+        return String::new();
+    }
+    let mut buf: Vec<u16> = vec![0; (len + 1) as usize];
+    let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+    if n <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buf[..n as usize]).trim().to_string()
+}
+
+unsafe extern "system" fn form_proc(
+    hwnd: HWND,
+    msg: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_COMMAND => {
+            let id = winapi::shared::minwindef::LOWORD(wparam as u32) as i32;
+            if id == ID_OK {
+                let mut ok = false;
+                FORM.with(|f| {
+                    if let Some(st) = f.borrow_mut().as_mut() {
+                        let shop = read_text(st.edit_shop);
+                        if shop.is_empty() {
+                            // 매장 ID 가 비면 등록 자체가 성립하지 않는다.
+                            MessageBoxW(
+                                hwnd,
+                                wide("매장 ID 를 입력해 주세요.").as_ptr(),
+                                wide("CubeRemote 장비 등록").as_ptr(),
+                                MB_OK | MB_ICONWARNING,
+                            );
+                            SetFocus(st.edit_shop);
+                            return;
+                        }
+                        st.result = Some(RegisterInput {
+                            shop_id: shop,
+                            device_nm: read_text(st.edit_name),
+                        });
+                        ok = true;
+                    }
+                });
+                if ok {
+                    DestroyWindow(hwnd);
+                }
+                return 0;
+            }
+            if id == ID_CANCEL {
+                DestroyWindow(hwnd);
+                return 0;
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_CLOSE => {
+            // 여기서는 닫기를 허용한다. 진행률 창과 달리 취소가 정상 경로다.
+            DestroyWindow(hwnd);
+            0
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+unsafe fn label(parent: HWND, hinst: HINSTANCE, text: &str, x: i32, y: i32, w: i32) -> HWND {
+    let h = CreateWindowExW(
+        0,
+        wide("STATIC").as_ptr(),
+        wide(text).as_ptr(),
+        WS_CHILD | WS_VISIBLE,
+        x,
+        y,
+        w,
+        20,
+        parent,
+        null_mut(),
+        hinst,
+        null_mut(),
+    );
+    apply_default_font(h);
+    h
+}
+
+unsafe fn edit(parent: HWND, hinst: HINSTANCE, id: i32, text: &str, x: i32, y: i32, w: i32) -> HWND {
+    let h = CreateWindowExW(
+        0,
+        wide("EDIT").as_ptr(),
+        wide(text).as_ptr(),
+        WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+        x,
+        y,
+        w,
+        24,
+        parent,
+        id as usize as HMENU,
+        hinst,
+        null_mut(),
+    );
+    apply_default_font(h);
+    h
+}
+
+unsafe fn button(
+    parent: HWND,
+    hinst: HINSTANCE,
+    id: i32,
+    text: &str,
+    x: i32,
+    y: i32,
+    default: bool,
+) -> HWND {
+    let mut style = WS_CHILD | WS_VISIBLE | WS_TABSTOP;
+    if default {
+        style |= BS_DEFPUSHBUTTON;
+    }
+    let h = CreateWindowExW(
+        0,
+        wide("BUTTON").as_ptr(),
+        wide(text).as_ptr(),
+        style,
+        x,
+        y,
+        92,
+        30,
+        parent,
+        id as usize as HMENU,
+        hinst,
+        null_mut(),
+    );
+    apply_default_font(h);
+    h
+}
+
+/// 매장 ID / 장비 이름을 입력받는다. 취소하면 None.
+///
+/// `default_device_nm` 는 보통 컴퓨터 이름을 넘긴다. 현장에서 그대로 두는 경우가
+/// 많아서 비워두는 것보다 낫다.
+pub fn prompt_registration(default_device_nm: &str) -> Option<RegisterInput> {
+    unsafe {
+        let hinst = GetModuleHandleW(null_mut());
+        let class_name = wide("CubeRemoteRegister");
+
+        let mut wc: WNDCLASSW = std::mem::zeroed();
+        wc.lpfnWndProc = Some(form_proc);
+        wc.hInstance = hinst;
+        wc.hCursor = LoadCursorW(null_mut(), IDC_ARROW);
+        wc.hbrBackground = (COLOR_BTNFACE + 1) as HBRUSH;
+        wc.lpszClassName = class_name.as_ptr();
+        RegisterClassW(&wc);
+
+        let hwnd = CreateWindowExW(
+            0,
+            class_name.as_ptr(),
+            wide("CubeRemote 장비 등록").as_ptr(),
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            440,
+            250,
+            null_mut(),
+            null_mut(),
+            hinst,
+            null_mut(),
+        );
+        if hwnd.is_null() {
+            return None;
+        }
+
+        label(
+            hwnd,
+            hinst,
+            "이 컴퓨터를 원격관리 대상으로 등록합니다.",
+            18,
+            16,
+            400,
+        );
+        label(hwnd, hinst, "매장 ID", 18, 56, 80);
+        let edit_shop = edit(hwnd, hinst, ID_SHOP, "", 104, 54, 300);
+        label(hwnd, hinst, "장비 이름", 18, 94, 80);
+        let edit_name = edit(hwnd, hinst, ID_NAME, default_device_nm, 104, 92, 300);
+        label(
+            hwnd,
+            hinst,
+            "매장 ID 는 관리자에게 받은 값을 입력하세요.",
+            18,
+            126,
+            400,
+        );
+
+        button(hwnd, hinst, ID_OK, "등록", 210, 164, true);
+        button(hwnd, hinst, ID_CANCEL, "취소", 312, 164, false);
+
+        FORM.with(|f| {
+            *f.borrow_mut() = Some(FormState {
+                edit_shop,
+                edit_name,
+                result: None,
+            });
+        });
+
+        ShowWindow(hwnd, SW_SHOWNORMAL);
+        UpdateWindow(hwnd);
+        SetFocus(edit_shop);
+
+        // 진행률 창과 달리 여기서는 블로킹 루프를 돈다. 사용자가 결정할 때까지
+        // 기다리는 것이 이 창의 목적이다.
+        let mut msg: MSG = std::mem::zeroed();
+        while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
+            // IsDialogMessage 를 쓰면 Tab 이동과 Enter 가 동작하지만, 이 창은
+            // 대화상자 클래스가 아니라 일반 창이라 그냥 표준 처리를 한다.
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        FORM.with(|f| f.borrow_mut().take().and_then(|st| st.result))
     }
 }
