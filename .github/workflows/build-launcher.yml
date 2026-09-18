@@ -1,0 +1,60 @@
+# 런처 단독 빌드 — 수동 실행 전용.
+#
+# 왜 필요한가:
+#   flutter-build.yml 은 workflow_call 전용이라 태그를 걸어야만 돈다. 그런데 태그
+#   빌드는 45분이 걸리고 Android/Windows 전부를 다시 만든다. 런처(와 libs/cube_ui)
+#   만 고쳤을 때 그걸 확인하자고 45분을 태우는 것은 낭비다.
+#
+#   이 워크플로우는 런처만 6분 안에 빌드해서 아티팩트로 올린다. 컴파일 확인은
+#   물론이고, 받아서 실제로 실행해볼 수도 있다.
+#
+#   libs/cube_ui 도 런처의 path 의존성이라 여기서 같이 컴파일된다. 그래서 창 코드를
+#   agent 빌드(30분)에 얹기 전에 여기서 먼저 걸러낼 수 있다.
+#
+# 릴리스에는 아무것도 올리지 않는다. 배포는 태그 빌드가 한다.
+name: Build launcher (manual)
+
+on:
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: "1.75"
+
+jobs:
+  build-launcher-only:
+    name: launcher only
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          # 런처는 submodule 을 안 쓴다. 받지 않으면 checkout 이 훨씬 빠르다.
+          submodules: false
+
+      - name: Install Rust toolchain (i686 target)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: launcher
+          key: i686-pc-windows-msvc
+          cache-on-failure: true
+
+      - name: Build launcher
+        shell: bash
+        run: |
+          set -e
+          cargo build --release --target i686-pc-windows-msvc -p cube_launcher
+          mkdir -p ./out
+          cp ./target/i686-pc-windows-msvc/release/cuberemote.exe ./out/cuberemote-setup.exe
+          ls -la ./out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuberemote-setup
+          path: ./out/cuberemote-setup.exe
+          if-no-files-found: error
