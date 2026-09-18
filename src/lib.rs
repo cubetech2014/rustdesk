@@ -34,15 +34,11 @@ pub use version::*;
 // CubeRemote: agent heartbeat (Windows service 에서 동작 — Flutter window 와 무관)
 #[cfg(target_os = "windows")]
 pub mod cuberemote_heartbeat;
-// CubeRemote: headless agent 초기화 (설정 강제 + 영구 비밀번호 + 매장 검증).
-// Flutter 빌드에서는 Dart(agent_service / registration_page)가 하던 일이라
-// cube_headless 에서만 필요하다.
+// CubeRemote: headless 모드 설정 강제 (support x86 전용).
+// flutter_ffi.rs 가 feature="flutter" 전용이라 headless 빌드에서는 거기 주입한
+// conn-type / access-mode 강제가 적용되지 않는다. 그 자리를 메운다.
 #[cfg(all(target_os = "windows", feature = "cube_headless"))]
-pub mod cuberemote_agent;
-// CubeRemote: headless 자동 업데이트. Flutter 빌드의 update_service.dart 대응.
-// UI 가 없으므로 다이얼로그 없이, 원격 세션이 없을 때만 조용히 설치한다.
-#[cfg(all(target_os = "windows", feature = "cube_headless"))]
-pub mod cuberemote_update;
+pub mod cuberemote_headless;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 mod bridge_generated;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]

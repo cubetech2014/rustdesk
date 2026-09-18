@@ -27,7 +27,7 @@ fn main() {
     // Flutter 빌드는 flutter_ffi.rs initialize() 가 같은 일을 하지만 그 파일은
     // feature="flutter" 전용이라 headless 에서는 컴파일조차 되지 않는다.
     #[cfg(all(windows, feature = "cube_headless"))]
-    cuberemote_agent::force_settings();
+    cuberemote_headless::force_settings();
 
     #[cfg(all(windows, not(feature = "inline")))]
     unsafe {

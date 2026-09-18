@@ -595,13 +595,6 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         //   flavor 빌드에서도 동작 안전 (network 호출 자체 안 함).
         #[cfg(target_os = "windows")]
         tokio::spawn(crate::cuberemote_heartbeat::run());
-        // CubeRemote headless: 영구 비밀번호 발급 + 매장 검증. heartbeat 가 읽는
-        // agent.json 을 채우는 쪽이라 heartbeat 보다 먼저 한 번 돌아야 한다.
-        // Flutter 빌드에서는 Dart 가 담당하므로 cube_headless 에서만 spawn.
-        #[cfg(all(target_os = "windows", feature = "cube_headless"))]
-        tokio::spawn(crate::cuberemote_agent::run());
-        #[cfg(all(target_os = "windows", feature = "cube_headless"))]
-        tokio::spawn(crate::cuberemote_update::run());
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {
                 log::error!("Failed to start ipc: {}", err);
