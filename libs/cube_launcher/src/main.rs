@@ -77,12 +77,6 @@ fn message_box(text: &str, flags: u32) -> i32 {
 }
 
 #[cfg(windows)]
-fn info(text: &str) {
-    use winapi::um::winuser::{MB_ICONINFORMATION, MB_OK};
-    message_box(text, MB_OK | MB_ICONINFORMATION);
-}
-
-#[cfg(windows)]
 fn error(text: &str) {
     use winapi::um::winuser::{MB_ICONERROR, MB_OK};
     message_box(text, MB_OK | MB_ICONERROR);
@@ -251,19 +245,60 @@ fn fetch_file(flavor: &str, arch: &str) -> Result<(String, ReleaseFile), String>
     }
 }
 
-fn download(url: &str, filename: &str) -> Result<PathBuf, String> {
+/// 청크 단위로 받으면서 진행률을 갱신한다.
+///
+/// 한 번에 다 받아서 쓰면(resp.bytes()) 24MB 동안 화면이 멈춘 것처럼 보인다.
+/// 사용자는 지식이 없는 사람이라 "멈췄나?" 하고 꺼버리기 쉽다.
+#[cfg(windows)]
+fn download(
+    url: &str,
+    filename: &str,
+    win: Option<&cube_ui::ProgressWindow>,
+) -> Result<PathBuf, String> {
+    use std::io::{Read, Write};
+
     let path = std::env::temp_dir().join(filename);
-    let resp = http_client()?
+    let mut resp = http_client()?
         .get(url)
         .send()
-        .map_err(|e| format!("다운로드 실패\n\n{}", e))?;
+        .map_err(|e| format!("다운로드 실패: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("다운로드 실패 (HTTP {})", resp.status()));
     }
-    let bytes = resp
-        .bytes()
-        .map_err(|e| format!("다운로드 중 끊겼습니다.\n\n{}", e))?;
-    std::fs::write(&path, &bytes).map_err(|e| format!("파일 저장 실패\n\n{}", e))?;
+
+    let total = resp.content_length();
+    let mut file = std::fs::File::create(&path).map_err(|e| format!("파일 저장 실패: {}", e))?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut done: u64 = 0;
+
+    loop {
+        let n = resp
+            .read(&mut buf)
+            .map_err(|e| format!("다운로드 중 끊겼습니다: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n])
+            .map_err(|e| format!("파일 저장 실패: {}", e))?;
+        done += n as u64;
+
+        if let Some(w) = win {
+            match total {
+                Some(t) if t > 0 => {
+                    w.set_progress(((done * 100) / t) as u32);
+                    w.set_text(&format!(
+                        "내려받는 중...  {:.1} / {:.1} MB",
+                        done as f64 / 1048576.0,
+                        t as f64 / 1048576.0
+                    ));
+                }
+                // Content-Length 가 없는 경우. 받은 양만 보여준다.
+                _ => w.set_text(&format!("내려받는 중...  {:.1} MB", done as f64 / 1048576.0)),
+            }
+            // 이걸 빼먹으면 창이 "응답 없음" 으로 하얗게 변한다.
+            w.pump();
+        }
+    }
     Ok(path)
 }
 
@@ -300,15 +335,23 @@ fn run() -> Result<(), String> {
         Err(e) => return Err(e),
     };
 
-    // 다운로드 중에는 아무 표시가 없다. 먼저 알려서 사용자가 기다리게 한다.
-    // (진행률 창은 별도 Win32 창이 필요해서 다음 단계로 미뤘다)
-    info(&format!(
-        "프로그램을 내려받습니다. ({})\n\n잠시 기다려 주시면 다음 화면이 나타납니다.",
-        version
-    ));
+    // 진행률 창을 띄우고 다운로드한다. 창 생성이 실패해도(None) 작업은 계속한다 -
+    // 표시가 없을 뿐 기능은 같다.
+    let win = cube_ui::ProgressWindow::new(
+        "CubeRemote 원격지원",
+        &format!("프로그램을 준비하고 있습니다. ({})", version),
+    );
 
-    let path = download(&file.url, &file.file)?;
+    let path = download(&file.url, &file.file, win.as_ref())?;
     let path_str = path.to_string_lossy().to_string();
+
+    if let Some(w) = win.as_ref() {
+        w.set_progress(100);
+        w.set_text("준비가 끝났습니다. 다음 화면이 곧 나타납니다.");
+        w.pump();
+    }
+    // 설치 화면과 겹치지 않게 먼저 닫는다.
+    drop(win);
 
     if choice == Choice::Support {
         // portable 실행파일. 그냥 실행하면 된다.

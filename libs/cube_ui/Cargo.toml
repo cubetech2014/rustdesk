@@ -1,0 +1,26 @@
+[package]
+name = "cube_ui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "CubeRemote 최소 Win32 UI - headless 빌드와 런처가 공유한다"
+
+# 왜 별도 크레이트인가:
+#   세 곳이 같은 종류의 작은 창을 필요로 한다.
+#     런처      다운로드 진행률
+#     agent x86 매장 정보 입력 (headless 라 Flutter 등록 화면이 없다)
+#     support   ID / 임시 비밀번호 표시
+#   한 곳에 모아두면 고칠 때 한 번만 고치면 되고, 무엇보다 런처 빌드(약 6분)로
+#   창 코드를 먼저 검증할 수 있다. agent 빌드는 30분 가까이 걸려서 여기서
+#   반복하면 비용이 크다.
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = [
+    "winuser",        # 창 생성, 메시지 루프
+    "commctrl",       # 진행률 바 (msctls_progress32)
+    "libloaderapi",   # GetModuleHandleW
+    "wingdi",         # GetStockObject (기본 GUI 폰트)
+    "windef",
+    "minwindef",
+    "basetsd",
+] }
