@@ -22,7 +22,12 @@ fn build_mac() {
     println!("cargo:rerun-if-changed={}", file);
 }
 
-#[cfg(all(windows, feature = "inline"))]
+// CubeRemote: cube_headless(support x86)도 포함시킨다.
+//   원래 inline(sciter) 전용이었다. Flutter 빌드는 Runner.rc 가, portable 패커는
+//   자기 build.rs 가 아이콘/매니페스트를 박아주는데, headless 는 둘 다 안 거치는
+//   단일 EXE 라 이걸 안 켜면 아이콘 없는 기본 실행파일이 나온다. 매니페스트가
+//   없으면 Common Controls 6.0 도 안 붙어서 창이 Windows 95 모양이 된다.
+#[cfg(all(windows, any(feature = "inline", feature = "cube_headless")))]
 fn build_manifest() {
     use std::io::Write;
     if std::env::var("PROFILE").unwrap() == "release" {
@@ -80,7 +85,7 @@ fn install_android_deps() {
 fn main() {
     hbb_common::gen_version();
     install_android_deps();
-    #[cfg(all(windows, feature = "inline"))]
+    #[cfg(all(windows, any(feature = "inline", feature = "cube_headless")))]
     build_manifest();
     #[cfg(windows)]
     build_windows();

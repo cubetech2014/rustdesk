@@ -336,9 +336,9 @@ impl SupportWindow {
 
             static_label(hwnd, hinst, "아래 두 가지를 상담원에게 알려주세요.", 18, 16, 380);
             static_label(hwnd, hinst, "ID", 18, 62, 80);
-            let id_value = static_label(hwnd, hinst, "발급 중...", 110, 62, 280);
+            let id_value = static_label(hwnd, hinst, "연결 중...", 110, 62, 280);
             static_label(hwnd, hinst, "비밀번호", 18, 96, 80);
-            let pw_value = static_label(hwnd, hinst, "", 110, 96, 280);
+            let pw_value = static_label(hwnd, hinst, "연결 중...", 110, 96, 280);
             static_label(hwnd, hinst, "이 창을 닫으면 원격지원이 종료됩니다.", 18, 150, 380);
 
             ShowWindow(hwnd, SW_SHOWNORMAL);

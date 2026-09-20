@@ -60,3 +60,71 @@ pub fn force_settings() {
 
     log::info!("[CubeRemote headless] forced settings (incoming / full / temporary-password)");
 }
+
+/// 9자리 ID 를 "123 456 789" 로. 구두로 불러주기 쉬우라고.
+fn format_id(id: &str) -> String {
+    if id.len() == 9 && id.chars().all(|c| c.is_ascii_digit()) {
+        format!("{} {} {}", &id[0..3], &id[3..6], &id[6..9])
+    } else {
+        id.to_string()
+    }
+}
+
+/// 1회용 원격지원 화면.
+///
+/// 이 시점에 core_main() 이 이미 할 일을 다 했다:
+///   - is_quick_support_exe() 로 자신을 인식하고 UAC 승격 / portable service 기동
+///   - start_server 를 백그라운드 스레드로 띄움
+/// 그래서 여기서는 값이 준비되기를 기다렸다 보여주기만 하면 된다.
+/// Flutter 빌드에서 ui::start(args) 가 있던 자리다.
+pub fn run_support() {
+    // IPC 동기화 스레드를 깨운다. 이 한 줄이 전부다 - SENDER 는 lazy_static 이고
+    // 초기화 식이 check_connect_status(true) 라, 처음 건드리는 순간 스레드가 뜬다.
+    //
+    // 그 스레드가 1초마다 서버 프로세스에 id 와 temporary-password 를 물어
+    // UI_STATUS / TEMPORARY_PASSWD 를 채운다. 이 경로 없이는 두 값이 영원히 빈다.
+    let _ = crate::ui_interface::SENDER.lock();
+
+    let win = match cube_ui::SupportWindow::new() {
+        Some(w) => w,
+        None => {
+            log::error!("[CubeRemote support] 창을 만들지 못했습니다");
+            return;
+        }
+    };
+
+    // 서버 등록 전에는 ID 도 비밀번호도 없다. 보통 2~3초.
+    const WAITING: &str = "연결 중...";
+
+    loop {
+        if win.is_closed() {
+            break;
+        }
+
+        // 둘 다 뮤텍스 복사라 사실상 공짜다. 값이 그대로면 set_info 가 무시한다.
+        //
+        // ipc::get_id() 를 쓰면 안 된다. 동기 함수처럼 보이지만 실제로는
+        // #[tokio::main(flavor = "current_thread")] 래퍼라 IPC 가 늦으면 최대 1초
+        // 블로킹이고, 그 사이 메시지 펌프가 멈춰 창이 하얗게 굳는다.
+        // (UiStatus::id 는 #[cfg(not(feature = "flutter"))] 필드 - headless 전용)
+        let status = crate::ui_interface::get_connect_status();
+        let password = crate::ui_interface::temporary_password();
+
+        let id_text = if status.id.is_empty() {
+            WAITING.to_string()
+        } else {
+            format_id(&status.id)
+        };
+        let pw_text = if password.is_empty() {
+            WAITING.to_string()
+        } else {
+            password
+        };
+        win.set_info(&id_text, &pw_text);
+        win.pump();
+
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+
+    log::info!("[CubeRemote support] 사용자가 창을 닫았습니다. 종료합니다.");
+}

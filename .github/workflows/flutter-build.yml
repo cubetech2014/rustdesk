@@ -382,6 +382,176 @@ jobs:
   # CustomActions.vcxproj / msi.sln)과 cube_headless feature 는 그대로 남아 있다 -
   # support x86 이 같은 것을 쓰기 때문이다.
 
+  # 32비트 Windows 1회용 원격지원 — cuberemote-{tag}-support-x86-qs.exe
+  #
+  # 32비트 agent 는 만들지 않기로 했지만(위 주석), 그 장비들도 원격지원은 받아야
+  # 한다. 그래서 support flavor 만 x86 으로 낸다.
+  #
+  # x64 support 와 만드는 방식이 완전히 다르다:
+  #   x64  Flutter 번들(폴더) → libs/portable 로 자체압축 EXE 1개
+  #   x86  Flutter 가 없으므로 cube_headless 로 EXE 1개를 바로 빌드 → 이름만 바꿈
+  # 파일이 원래 하나라 패커를 거칠 이유가 없다. 패커를 쓰면 i686 용으로 한 번 더
+  # 빌드해야 하고 실행 시 임시폴더 압축해제가 붙는데, 얻는 게 없다.
+  #
+  # 파일명의 -qs 는 필수다. core_main.rs 의 is_quick_support_exe() 가 실행 파일명으로
+  # Quick Support 여부를 판단해서 최초 실행 시 UAC 1회 → SYSTEM 승격을 건다.
+  # 이름이 바뀌면 (서버 mirror 시에도) 원격 화면이 UAC 창에서 멈춘다.
+  #
+  # 소요 25~30분. vcpkg(x86-windows-static) 와 LLVM 이 필요해서 런처처럼 짧지 않다.
+  # 검증은 poc-win32.yml 로 따로 할 수 있다 (같은 빌드, 릴리스만 없음).
+  build-for-windows-x86-support:
+    name: support x86 (32bit)
+    runs-on: windows-2022
+    env:
+      CARGO_TARGET: i686-pc-windows-msvc
+      VCPKG_TRIPLET: x86-windows-static
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply CubeRemote branding patches
+        shell: bash
+        env:
+          CUBE_FLAVOR: support
+          CUBE_TAG: ${{ inputs.upload-tag }}
+          CUBE_ABI: x86
+        run: bash patches/apply.sh
+
+      - name: Install Rust toolchain (i686 target)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+          components: "rustfmt"
+
+      # bindgen (scrap 의 vpx/aom/yuv FFI 생성) 이 libclang 을 요구한다
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: support-x86
+          key: i686-pc-windows-msvc
+          # 링크 단계까지 가야 결과를 아는데 기본값(false)이면 실패할 때마다
+          # 의존성 전체를 처음부터 다시 빌드한다. 한 번에 25분씩 날아간다.
+          cache-on-failure: true
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies (x86-windows-static)
+        shell: bash
+        run: |
+          set -e
+          # classic 모드로 필요한 포트만 설치한다.
+          # 레포 루트에서 vcpkg 를 돌리면 루트의 vcpkg.json 때문에 manifest 모드가 켜지고
+          # ffmpeg/mfx-dispatch 까지 전부 빌드하려 든다 → $VCPKG_ROOT 로 이동해서 실행.
+          # RustDesk 는 aom/libvpx/libyuv/opus 를 패치해서 쓰므로 overlay-ports 는 필수다.
+          OVERLAY="$(pwd)/res/vcpkg"
+          cd "$VCPKG_ROOT"
+          if ! ./vcpkg install \
+                --triplet "${{ env.VCPKG_TRIPLET }}" \
+                --overlay-ports="$OVERLAY" \
+                libvpx aom libyuv opus libjpeg-turbo; then
+            echo "===== vcpkg 실패 — 빌드 로그 tail ====="
+            find "${VCPKG_ROOT}/buildtrees" -name "*-out.log" 2>/dev/null | while read -r f; do
+              echo "----- $f -----"
+              tail -n 60 "$f"
+            done
+            exit 1
+          fi
+
+      # libsodium-sys 0.2.7 의 크로스컴파일 버그 우회. 자세한 경위는
+      # patches/fix_libsodium_sys.py 와 poc-win32.yml 주석 참고.
+      # 요약: build-script 의 cfg! 는 HOST 를 가리키므로 i686 타겟에 x64 lib 이
+      # 들어가 LNK4272 로 죽는다. 환경변수로 우회하면 호스트 빌드가 반대로 깨진다
+      # (rustdesk build.rs 가 hbb_common 을 build-dependency 로 쓴다).
+      - name: Patch libsodium-sys for cross-compile
+        shell: bash
+        run: |
+          set -e
+          REPO=$(cygpath -m "$(pwd)")
+
+          # Cargo.lock 의 버전과 반드시 일치시킬 것. 어긋나면 사전 생성 바인딩과
+          # lib 의 ABI 가 안 맞는다.
+          VER=0.2.7
+          LOCKED=$(grep -A1 'name = "libsodium-sys"' Cargo.lock | grep '^version' | cut -d'"' -f2)
+          echo "Cargo.lock=$LOCKED  workflow=$VER"
+          if [ "$LOCKED" != "$VER" ]; then
+            echo "FATAL: 버전 불일치. Cargo.lock 을 확인하고 이 워크플로우의 VER 을 맞출 것"
+            exit 1
+          fi
+
+          BASE=$(cygpath -u "${RUNNER_TEMP:-/tmp}")
+          WORK="$BASE/cube-libsodium"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          cd "$WORK"
+
+          curl -sSL --fail -o libsodium-sys.crate "https://static.crates.io/crates/libsodium-sys/libsodium-sys-${VER}.crate"
+          tar xzf libsodium-sys.crate
+
+          CRATE="libsodium-sys-${VER}"
+          W32="$CRATE/msvc/Win32/Release/v142/libsodium.lib"
+          if [ ! -f "$W32" ]; then
+            echo "FATAL: 32비트 libsodium.lib 를 못 찾음. 크레이트 구조가 바뀐 듯:"
+            find "$CRATE/msvc" -name '*.lib'
+            exit 1
+          fi
+          # x86 은 cdecl 이라 심볼 앞에 언더스코어가 붙는다. x64 lib 에는 없다.
+          if ! grep -aq '_sodium_init' "$W32"; then
+            echo "FATAL: Win32 lib 에 _sodium_init (x86 cdecl) 심볼이 없다"
+            exit 1
+          fi
+
+          # Python 은 Windows 네이티브라 MSYS 경로(/d/a/...)를 못 읽는다. 반드시 변환.
+          CRATE_WIN=$(cygpath -m "$WORK/$CRATE")
+          python "$REPO/patches/fix_libsodium_sys.py" "$CRATE_WIN" "$REPO/Cargo.toml"
+
+      - name: Build support (i686, headless)
+        shell: bash
+        run: |
+          set -e
+          # --bin rustdesk 만. naming/service 는 이 배포에 필요 없다.
+          # 아이콘과 매니페스트는 build.rs 의 build_manifest() 가 박는다
+          # (cube_headless 도 포함하도록 열어뒀다).
+          cargo build --release --target "${{ env.CARGO_TARGET }}" --features cube_headless --bin rustdesk
+          mkdir -p ./SignOutput
+          cp "target/${{ env.CARGO_TARGET }}/release/rustdesk.exe" \
+             "./SignOutput/cuberemote-${{ inputs.upload-tag }}-support-x86-qs.exe"
+          ls -la ./SignOutput/
+
+      - name: Sign support exe
+        if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != '-2'
+        shell: bash
+        run: |
+          pip3 install requests argparse
+          BASE_URL=${{ env.SIGN_BASE_URL }} SECRET_KEY=${{ secrets.SIGN_SECRET_KEY }} python3 res/job.py sign_files ./SignOutput
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v1
+        if: env.UPLOAD_ARTIFACT == 'true'
+        with:
+          prerelease: true
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            ./SignOutput/cuberemote-${{ inputs.upload-tag }}-support-x86-qs.exe
+
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
 # DISABLED:   build-for-windows-sciter:
 #     name: ${{ matrix.job.target }} (${{ matrix.job.os }})

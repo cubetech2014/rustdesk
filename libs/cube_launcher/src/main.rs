@@ -86,8 +86,12 @@ fn error(text: &str) {
 ///
 /// 명령 링크(TDF_USE_COMMAND_LINKS)는 버튼 하나에 "제목 + 설명" 두 줄을 담는다.
 /// 버튼 텍스트의 첫 줄바꿈이 그 경계다.
+///
+/// 32비트에서는 "설치" 를 아예 보여주지 않는다. 32비트 agent 는 만들지 않기로
+/// 했고, 고를 수 있게 해놓고 고른 뒤에 안 된다고 하는 것은 이 프로그램의
+/// 목적(사용자가 아무것도 몰라도 되게 하는 것)에 정면으로 어긋난다.
 #[cfg(windows)]
-fn ask_choice() -> Choice {
+fn ask_choice(arch: &str) -> Choice {
     use winapi::um::commctrl::{
         TaskDialogIndirect, TASKDIALOGCONFIG, TASKDIALOG_BUTTON, TDCBF_CANCEL_BUTTON,
         TDF_ALLOW_DIALOG_CANCELLATION, TDF_USE_COMMAND_LINKS,
@@ -99,7 +103,11 @@ fn ask_choice() -> Choice {
     // 대화상자가 떠 있는 동안 이 문자열들이 살아있어야 한다.
     let title = wide("CubeRemote 원격지원");
     let instruction = wide("무엇을 하시겠습니까?");
-    let content = wide("아래에서 선택하시면 나머지는 자동으로 진행됩니다.");
+    let content = if arch == "x86" {
+        wide("아래를 누르시면 나머지는 자동으로 진행됩니다.")
+    } else {
+        wide("아래에서 선택하시면 나머지는 자동으로 진행됩니다.")
+    };
     // 버튼 텍스트의 첫 줄바꿈이 "제목 / 설명" 경계다.
     let b_support = wide("지금 한 번만 원격지원 받기\n설치하지 않습니다. 지원이 끝나면 창을 닫으면 됩니다.");
     let b_install = wide("이 컴퓨터에 설치해서 상시 관리받기\n매장 장비 등록용입니다. 설치 후 매장 정보를 입력합니다.");
@@ -112,6 +120,8 @@ fn ask_choice() -> Choice {
     buttons[0].pszButtonText = b_support.as_ptr();
     buttons[1].nButtonID = ID_INSTALL;
     buttons[1].pszButtonText = b_install.as_ptr();
+    // 32비트면 첫 번째 버튼(1회용 원격지원)만 노출한다.
+    let n_buttons: u32 = if arch == "x86" { 1 } else { 2 };
 
     let mut cfg: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
     cfg.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
@@ -120,7 +130,7 @@ fn ask_choice() -> Choice {
     cfg.pszWindowTitle = title.as_ptr();
     cfg.pszMainInstruction = instruction.as_ptr();
     cfg.pszContent = content.as_ptr();
-    cfg.cButtons = 2;
+    cfg.cButtons = n_buttons;
     cfg.pButtons = buttons.as_ptr();
 
     let mut pressed: i32 = 0;
@@ -134,7 +144,7 @@ fn ask_choice() -> Choice {
     };
     // S_OK 가 아니면 설정이 잘못됐다는 뜻. 사용자를 막다른 길에 두지 않는다.
     if hr != 0 {
-        return ask_choice_fallback();
+        return ask_choice_fallback(arch);
     }
 
     match pressed {
@@ -146,8 +156,20 @@ fn ask_choice() -> Choice {
 
 /// TaskDialog 가 실패했을 때의 폴백. 보기 좋진 않지만 어디서나 동작한다.
 #[cfg(windows)]
-fn ask_choice_fallback() -> Choice {
-    use winapi::um::winuser::{IDNO, IDYES, MB_ICONQUESTION, MB_YESNOCANCEL};
+fn ask_choice_fallback(arch: &str) -> Choice {
+    use winapi::um::winuser::{
+        IDNO, IDOK, IDYES, MB_ICONQUESTION, MB_OKCANCEL, MB_YESNOCANCEL,
+    };
+
+    if arch == "x86" {
+        // 32비트는 선택지가 하나뿐이라 확인/취소면 충분하다.
+        let text = "지금 한 번만 원격지원을 받습니다.\n\n설치하지 않으며, 지원이 끝나면 창을 닫으면 됩니다.";
+        return match message_box(text, MB_OKCANCEL | MB_ICONQUESTION) {
+            x if x == IDOK => Choice::Support,
+            _ => Choice::Quit,
+        };
+    }
+
     let text = "\
 무엇을 하시겠습니까?
 
@@ -240,7 +262,8 @@ fn fetch_file(flavor: &str, arch: &str) -> Result<(String, ReleaseFile), String>
 
     match rel.files.into_iter().next() {
         Some(f) if !f.url.is_empty() => Ok((rel.version, f)),
-        // 빌드되지 않는 조합. 32비트 support 가 아직 없을 때 여기로 온다.
+        // 빌드되지 않는 조합. 32비트 agent 가 대표적이다 (만들지 않기로 했다).
+        // support 는 x86/x64 둘 다 있으므로, 여기 오면 서버에 파일이 안 올라간 것이다.
         _ => Err(String::new()),
     }
 }
@@ -319,12 +342,14 @@ fn download(
 
 #[cfg(windows)]
 fn run() -> Result<(), String> {
-    let choice = ask_choice();
+    // 비트 판정이 먼저다. 32비트에서는 물어볼 것 자체가 줄어든다.
+    let arch = native_arch();
+
+    let choice = ask_choice(arch);
     if choice == Choice::Quit {
         return Ok(());
     }
 
-    let arch = native_arch();
     let flavor = if choice == Choice::Support {
         "support"
     } else {
@@ -336,10 +361,7 @@ fn run() -> Result<(), String> {
         // 빈 에러 = 그 조합이 없다는 뜻. 사용자에게는 기술 용어 대신 상황을 설명한다.
         Err(e) if e.is_empty() => {
             if choice == Choice::Support {
-                error(
-                    "이 컴퓨터(32비트 Windows)에서는 1회용 원격지원을 아직 \
-                     사용할 수 없습니다.\n\n담당자에게 문의해 주세요.",
-                );
+                error("원격지원 파일을 서버에서 찾지 못했습니다.\n\n담당자에게 문의해 주세요.");
             } else {
                 error("이 컴퓨터에 맞는 설치 파일이 없습니다.\n\n담당자에게 문의해 주세요.");
             }

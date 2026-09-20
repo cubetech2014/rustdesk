@@ -23,10 +23,11 @@ path = "src/service.rs"
 [features]
 inline = []
 cli = []
-# CubeRemote: UI 없는 32비트 Windows agent (B안) 용.
-# Flutter Windows 데스크톱이 x64 전용이라 32비트 POS 에는 현재 agent 를 못 깐다.
+# CubeRemote: UI 없는 32비트 Windows 빌드용 (support x86 = 1회용 원격지원).
+# Flutter Windows 데스크톱이 x64 전용이라 32비트 PC 에는 일반 빌드를 못 올린다.
 # 기존 non-flutter 경로(cli / sciter inline)는 RustDesk 가 Flutter 로 넘어가며
 # 방치돼 stable 에서 컴파일조차 안 되므로, sciter ui 만 들어내는 자체 feature 를 둔다.
+# Flutter UI 자리는 libs/cube_ui 의 작은 Win32 창(SupportWindow)이 대신한다.
 # 기본 off — flutter 빌드에는 아무 영향이 없다.
 cube_headless = []
 use_samplerate = ["samplerate"]
@@ -150,6 +151,9 @@ impersonate_system = { git = "https://github.com/rustdesk-org/impersonate-system
 shared_memory = "0.12"
 tauri-winrt-notification = "0.1"
 runas = "1.2"
+# CubeRemote support x86 전용 창(ID/비밀번호 표시). winapi 만 쓰는 작은 크레이트라
+# feature 로 가르지 않고 그냥 둔다 - Flutter 빌드에서 비용이 사실상 없다.
+cube_ui = { path = "libs/cube_ui" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
