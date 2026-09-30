@@ -19,12 +19,16 @@ import 'agent_service.dart';
 import 'config.dart';
 import 'registration_page.dart';
 import 'session_service.dart';
+import 'tls_roots.dart';
 import 'update_service.dart';
 import 'viewer_login_page.dart';
 
 class CubeRemoteMainHook {
   /// 앱 시작 시 호출.
   static Future<void> onAppStart() async {
+    // 어떤 HTTPS 요청보다 먼저 — 자세한 이유는 tls_roots.dart
+    CubeRemoteTls.trustBundledRoots();
+
     UpdateService.checkInBackground();
 
     if (isAgentFlavor) {

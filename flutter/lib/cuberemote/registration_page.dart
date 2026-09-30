@@ -43,8 +43,8 @@ class _CubeRemoteRegistrationPageState extends State<CubeRemoteRegistrationPage>
     setState(() { _loading = true; _error = null; });
     try {
       final result = await ApiClient.verifyShop(shopId);
-      if (result == null || result['valid'] != true) {
-        setState(() => _error = result?['error']?.toString() ?? '서버 검증 실패');
+      if (result['valid'] != true) {
+        setState(() => _error = result['error']?.toString() ?? '서버 검증 실패');
         return;
       }
 

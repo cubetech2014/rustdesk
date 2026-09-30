@@ -1,4 +1,5 @@
 // CubeRemote 서버 API 클라이언트
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -8,7 +9,10 @@ class ApiClient {
   static final _client = http.Client();
   static const _timeout = Duration(seconds: 10);
 
-  static Future<Map<String, dynamic>?> verifyShop(String shopId) async {
+  /// 실패하면 {valid: false, error: 등록 화면에 그대로 보일 문구} 를 돌려준다.
+  /// 예전엔 모든 실패를 null 로 뭉개서 '서버 검증 실패' 만 떴고, 매장 미등록인지
+  /// 인증서 문제인지 네트워크 문제인지 현장에서 알 수 없었다 (2026-09-30 BF01).
+  static Future<Map<String, dynamic>> verifyShop(String shopId) async {
     try {
       final resp = await _client
           .post(
@@ -20,9 +24,31 @@ class ApiClient {
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
         return jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
       }
-    } catch (_) {}
-    return null;
+      if (resp.statusCode == 404) {
+        return _verifyFail('등록되지 않은 매장 ID 입니다.\n대시보드 매장 등록 탭에서 먼저 등록해 주세요.');
+      }
+      if (resp.statusCode == 403) {
+        return _verifyFail('차단된 매장입니다. 관리자에게 문의해 주세요.');
+      }
+      return _verifyFail('서버 오류입니다 (HTTP ${resp.statusCode}). 잠시 후 다시 시도해 주세요.');
+    } on TlsException catch (e) {
+      // http 패키지는 TLS 오류를 감싸지 않고 그대로 던진다
+      return _verifyFail('서버 인증서를 확인하지 못했습니다.\n'
+          'PC 의 날짜와 시간이 맞는지 확인해 주세요.\n(${_osDetail(e.osError, e.message)})');
+    } on TimeoutException {
+      return _verifyFail('서버 응답이 없습니다. 인터넷 연결을 확인해 주세요.');
+    } on SocketException catch (e) {
+      return _verifyFail('서버에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요.\n'
+          '(${_osDetail(e.osError, e.message)})');
+    } catch (e) {
+      return _verifyFail('서버 검증 실패\n($e)');
+    }
   }
+
+  static Map<String, dynamic> _verifyFail(String error) => {'valid': false, 'error': error};
+
+  // OS 가 준 문구는 앞뒤에 줄바꿈/탭이 붙어 온다
+  static String _osDetail(OSError? os, String fallback) => (os?.message ?? fallback).trim();
 
   static Future<bool> sendHeartbeat(Map<String, dynamic> data) async {
     try {
