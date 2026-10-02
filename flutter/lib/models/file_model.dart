@@ -542,6 +542,13 @@ class FileController {
   }
 
   void goToHomeDirectory() {
+    // CubeRemote 변경: Windows 쪽은 홈 버튼이 사용자 폴더 대신 드라이브 목록("이 PC")을 연다.
+    //   '/' 는 goToParentDirectory() 가 C:\ 에서 한 단계 더 올라갈 때 쓰는 경로와 같다.
+    //   homePath 는 빠른 접근(다운로드/바탕화면/문서) 계산에 쓰이므로 건드리지 않는다.
+    if (options.value.isWindows) {
+      openDirectory('/');
+      return;
+    }
     if (isLocal) {
       openDirectory(homePath);
       return;
