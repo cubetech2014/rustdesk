@@ -40,13 +40,14 @@ fn main() {
         // 비밀번호만 보여주는 작은 Win32 창을 띄운다.
         //
         // core_main 은 --service / --server / --install 같은 경로를 스스로 처리하고
-        // None 을 돌려준다. 여기까지 왔다는 건 "UI 를 띄울 상황" 이고, 그 시점에는
-        // 이미 portable service 승격과 서버 스레드 기동이 끝나 있다.
+        // None 을 돌려준다. 하지만 Some 이 곧 "원격지원 창을 띄울 상황" 은 아니다.
+        // 원격 연결이 들어올 때 서버가 띄우는 --cm(연결 관리자)도 Some 으로 온다.
+        // 그래서 인자를 보고 갈라야 한다 - cuberemote_headless::run 참고.
         #[cfg(feature = "cube_headless")]
         {
-            let _ = args;
+            let _ = &args;
             #[cfg(windows)]
-            cuberemote_headless::run_support();
+            cuberemote_headless::run(args);
         }
     }
     common::global_clean();

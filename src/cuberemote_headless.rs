@@ -2,7 +2,8 @@
 //
 // 현재 이 feature 를 쓰는 것은 **support x86** (32비트 Windows 1회용 원격지원)
 // 하나뿐이다. Flutter Windows 데스크톱이 x64 전용이라 32비트에서는 UI 를 통째로
-// 들어낸 빌드가 필요하고, 그 빌드에 필요한 설정 강제를 여기서 한다.
+// 들어낸 빌드가 필요하고, 그 빌드에 필요한 설정 강제와 Flutter UI 가 하던
+// 일(원격지원 창, 연결 관리자)의 대체를 여기서 한다.
 //
 // 왜 필요한가:
 //   apply.sh [10]/[10c] 는 conn-type / access-mode 강제를 src/flutter_ffi.rs 의
@@ -61,6 +62,97 @@ pub fn force_settings() {
     log::info!("[CubeRemote headless] forced settings (incoming / full / temporary-password)");
 }
 
+/// core_main() 이 Some 을 돌려준 뒤의 진입점. Flutter 빌드의 ui::start(args) 자리다.
+///
+/// 같은 EXE 가 두 가지 모습으로 실행된다:
+///   인자 없음  고객이 직접 실행 -> 원격지원 창 (ID / 비밀번호)
+///   --cm       원격 연결이 들어올 때 서버가 띄움 -> 연결 관리자 (창 없음)
+///
+/// v1.0.45 는 둘을 가르지 않고 전부 원격지원 창으로 보냈다. 그래서 32비트 첫
+/// 실기 테스트에서 접속을 시도할 때마다 창이 하나씩 늘고, viewer 는 계속 끊겼다.
+/// run_cm 주석 참고.
+pub fn run(args: &[String]) {
+    if args.first().map(String::as_str) == Some("--cm") {
+        run_cm();
+    } else {
+        run_support();
+    }
+}
+
+/// 연결 관리자(CM) 프로세스. 창 없이 IPC 만 받는다.
+///
+/// 원격 연결이 들어오면 서버는 `<자기 EXE> --cm` 을 띄우고 `_cm` IPC 로 붙는다
+/// (server/connection.rs start_ipc). 이 프로세스가 IPC 를 열지 않으면 서버는
+/// 몇 초 재시도한 뒤 "connection manager error" 로 그 연결을 끊는다.
+/// viewer 가 재접속하면 서버는 다시 --cm 을 띄우고, 같은 일이 반복된다.
+///
+/// Flutter 는 --cm 에서 CM 창을 띄우지만 여기서는 창이 필요 없다. 비밀번호가
+/// 맞으면 바로 연결이고(approve-mode=password) 고객이 누를 "수락" 버튼이 없다.
+/// 지원을 끝내고 싶으면 원격지원 창을 닫으면 된다 - 서버가 그 프로세스 안에서
+/// 돌기 때문에 연결이 같이 끊긴다. Flutter 의 --cm-no-ui 와 같은 방식이다.
+fn run_cm() {
+    use crate::ui_cm_interface::{start_ipc, ConnectionManager};
+
+    log::info!("[CubeRemote support] 연결 관리자 시작 (창 없음)");
+    // #[tokio::main] 래퍼라 리스너가 살아 있는 동안 여기서 돌아오지 않는다.
+    start_ipc(ConnectionManager {
+        ui_handler: HeadlessCm,
+    });
+}
+
+/// 지금 붙어 있는 연결 id. 마지막 하나가 끝나면 CM 프로세스를 끝낸다.
+static CM_ACTIVE: std::sync::Mutex<Vec<i32>> = std::sync::Mutex::new(Vec::new());
+
+/// 창 없는 CM 핸들러. 연결 수만 센다.
+#[derive(Clone)]
+struct HeadlessCm;
+
+impl crate::ui_cm_interface::InvokeUiCM for HeadlessCm {
+    // 같은 id 로 여러 번 올 수 있다 (인증 상태가 바뀌면 다시 Login 이 온다).
+    fn add_connection(&self, client: &crate::ui_cm_interface::Client) {
+        let mut active = CM_ACTIVE.lock().unwrap();
+        if !active.contains(&client.id) {
+            active.push(client.id);
+        }
+        log::info!(
+            "[CubeRemote support] 연결 #{} peer={} authorized={}",
+            client.id,
+            client.peer_id,
+            client.authorized
+        );
+    }
+
+    // 마지막 연결이 끝나면 프로세스를 끝낸다. sciter CM(ui/cm.rs) 과 같은 동작이고,
+    // 다음 연결이 오면 서버가 --cm 을 다시 띄운다.
+    //
+    // get_clients_length() 를 쓰지 않는 이유: close=false 로 끝난 연결(답하지 않은
+    // 채팅이 있었던 경우 등)은 CLIENTS 에 disconnected 로 남는다. 창이 있으면 사용자가
+    // 보고 닫겠지만 여기는 창이 없어서, 그 기준이면 보이지 않는 프로세스가 영원히 남는다.
+    fn remove_connection(&self, id: i32, _close: bool) {
+        let empty = {
+            let mut active = CM_ACTIVE.lock().unwrap();
+            active.retain(|x| *x != id);
+            active.is_empty()
+        };
+        log::info!("[CubeRemote support] 연결 #{} 종료 (남은 연결 없음: {})", id, empty);
+        if empty {
+            crate::platform::quit_gui();
+        }
+    }
+
+    fn new_message(&self, _id: i32, _text: String) {}
+
+    fn change_theme(&self, _dark: String) {}
+
+    fn change_language(&self) {}
+
+    fn show_elevation(&self, _show: bool) {}
+
+    fn update_voice_call_state(&self, _client: &crate::ui_cm_interface::Client) {}
+
+    fn file_transfer_log(&self, _action: &str, _log: &str) {}
+}
+
 /// 9자리 ID 를 "123 456 789" 로. 구두로 불러주기 쉬우라고.
 fn format_id(id: &str) -> String {
     if id.len() == 9 && id.chars().all(|c| c.is_ascii_digit()) {
@@ -76,8 +168,7 @@ fn format_id(id: &str) -> String {
 ///   - is_quick_support_exe() 로 자신을 인식하고 UAC 승격 / portable service 기동
 ///   - start_server 를 백그라운드 스레드로 띄움
 /// 그래서 여기서는 값이 준비되기를 기다렸다 보여주기만 하면 된다.
-/// Flutter 빌드에서 ui::start(args) 가 있던 자리다.
-pub fn run_support() {
+fn run_support() {
     // IPC 동기화 스레드를 깨운다. 이 한 줄이 전부다 - SENDER 는 lazy_static 이고
     // 초기화 식이 check_connect_status(true) 라, 처음 건드리는 순간 스레드가 뜬다.
     //
